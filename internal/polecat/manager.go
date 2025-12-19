@@ -80,12 +80,12 @@ func (m *Manager) Add(name string) (*Polecat, error) {
 		return nil, fmt.Errorf("creating worktree: %w", err)
 	}
 
-	// Create polecat state
+	// Create polecat state - ephemeral polecats start in working state
 	now := time.Now()
 	polecat := &Polecat{
 		Name:      name,
 		Rig:       m.rig.Name,
-		State:     StateIdle,
+		State:     StateWorking,
 		ClonePath: polecatPath,
 		Branch:    branchName,
 		CreatedAt: now,
@@ -204,6 +204,7 @@ func (m *Manager) AssignIssue(name, issue string) error {
 }
 
 // ClearIssue removes the issue assignment from a polecat.
+// In the ephemeral model, this transitions to Done state for cleanup.
 func (m *Manager) ClearIssue(name string) error {
 	polecat, err := m.Get(name)
 	if err != nil {
@@ -211,38 +212,44 @@ func (m *Manager) ClearIssue(name string) error {
 	}
 
 	polecat.Issue = ""
-	polecat.State = StateIdle
+	polecat.State = StateDone
 	polecat.UpdatedAt = time.Now()
 
 	return m.saveState(polecat)
 }
 
 // Wake transitions a polecat from idle to active.
+// Deprecated: In the ephemeral model, polecats start in working state.
+// This method is kept for backward compatibility with existing polecats.
 func (m *Manager) Wake(name string) error {
 	polecat, err := m.Get(name)
 	if err != nil {
 		return err
 	}
 
-	if polecat.State != StateIdle {
+	// Accept both idle and done states for legacy compatibility
+	if polecat.State != StateIdle && polecat.State != StateDone {
 		return fmt.Errorf("polecat is not idle (state: %s)", polecat.State)
 	}
 
-	return m.SetState(name, StateActive)
+	return m.SetState(name, StateWorking)
 }
 
 // Sleep transitions a polecat from active to idle.
+// Deprecated: In the ephemeral model, polecats are deleted when done.
+// This method is kept for backward compatibility.
 func (m *Manager) Sleep(name string) error {
 	polecat, err := m.Get(name)
 	if err != nil {
 		return err
 	}
 
-	if polecat.State != StateActive {
+	// Accept working state as well for legacy compatibility
+	if polecat.State != StateActive && polecat.State != StateWorking {
 		return fmt.Errorf("polecat is not active (state: %s)", polecat.State)
 	}
 
-	return m.SetState(name, StateIdle)
+	return m.SetState(name, StateDone)
 }
 
 // Finish transitions a polecat from working/done/stuck to idle and clears the issue.
@@ -304,10 +311,11 @@ func (m *Manager) loadState(name string) (*Polecat, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Return minimal polecat if state file missing
+			// Use StateWorking since ephemeral polecats are always working
 			return &Polecat{
 				Name:      name,
 				Rig:       m.rig.Name,
-				State:     StateIdle,
+				State:     StateWorking,
 				ClonePath: m.polecatDir(name),
 			}, nil
 		}

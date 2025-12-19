@@ -9,21 +9,22 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 )
 
-func TestStateIsAvailable(t *testing.T) {
+func TestStateIsActive(t *testing.T) {
 	tests := []struct {
-		state     State
-		available bool
+		state  State
+		active bool
 	}{
-		{StateIdle, true},
-		{StateActive, true},
-		{StateWorking, false},
+		{StateWorking, true},
 		{StateDone, false},
 		{StateStuck, false},
+		// Legacy states are treated as active
+		{StateIdle, true},
+		{StateActive, true},
 	}
 
 	for _, tt := range tests {
-		if got := tt.state.IsAvailable(); got != tt.available {
-			t.Errorf("%s.IsAvailable() = %v, want %v", tt.state, got, tt.available)
+		if got := tt.state.IsActive(); got != tt.active {
+			t.Errorf("%s.IsActive() = %v, want %v", tt.state, got, tt.active)
 		}
 	}
 }
@@ -299,7 +300,7 @@ func TestClearIssue(t *testing.T) {
 		t.Fatalf("ClearIssue: %v", err)
 	}
 
-	// Verify
+	// Verify - in ephemeral model, ClearIssue transitions to Done
 	polecat, err := m.Get("Test")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -307,7 +308,7 @@ func TestClearIssue(t *testing.T) {
 	if polecat.Issue != "" {
 		t.Errorf("Issue = %q, want empty", polecat.Issue)
 	}
-	if polecat.State != StateIdle {
-		t.Errorf("State = %v, want StateIdle", polecat.State)
+	if polecat.State != StateDone {
+		t.Errorf("State = %v, want StateDone", polecat.State)
 	}
 }

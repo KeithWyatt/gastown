@@ -1,14 +1,22 @@
 package witness
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/git"
+	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // Common errors
@@ -157,17 +165,30 @@ func (m *Manager) run(w *Witness) error {
 	fmt.Println("Witness running...")
 	fmt.Println("Press Ctrl+C to stop")
 
+	// Initial check immediately
+	m.checkAndProcess(w)
+
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			// Perform health check
-			if err := m.healthCheck(w); err != nil {
-				fmt.Printf("Health check error: %v\n", err)
-			}
+			m.checkAndProcess(w)
 		}
+	}
+}
+
+// checkAndProcess performs health check and processes shutdown requests.
+func (m *Manager) checkAndProcess(w *Witness) {
+	// Perform health check
+	if err := m.healthCheck(w); err != nil {
+		fmt.Printf("Health check error: %v\n", err)
+	}
+
+	// Check for shutdown requests
+	if err := m.processShutdownRequests(w); err != nil {
+		fmt.Printf("Shutdown request error: %v\n", err)
 	}
 }
 
@@ -178,10 +199,153 @@ func (m *Manager) healthCheck(w *Witness) error {
 	w.Stats.TotalChecks++
 	w.Stats.TodayChecks++
 
-	// For MVP, just update state
-	// Future: check keepalive files, nudge idle polecats, escalate stuck ones
-
 	return m.saveState(w)
+}
+
+// processShutdownRequests checks mail for lifecycle requests and handles them.
+func (m *Manager) processShutdownRequests(w *Witness) error {
+	// Get witness mailbox via bd mail inbox
+	messages, err := m.getWitnessMessages()
+	if err != nil {
+		return fmt.Errorf("getting messages: %w", err)
+	}
+
+	for _, msg := range messages {
+		// Look for LIFECYCLE requests
+		if strings.Contains(msg.Subject, "LIFECYCLE:") && strings.Contains(msg.Subject, "shutdown") {
+			fmt.Printf("Processing shutdown request: %s\n", msg.Subject)
+
+			// Extract polecat name from message body
+			polecatName := extractPolecatName(msg.Body)
+			if polecatName == "" {
+				fmt.Printf("  Warning: could not extract polecat name from message\n")
+				m.ackMessage(msg.ID)
+				continue
+			}
+
+			fmt.Printf("  Polecat: %s\n", polecatName)
+
+			// Perform cleanup
+			if err := m.cleanupPolecat(polecatName); err != nil {
+				fmt.Printf("  Cleanup error: %v\n", err)
+				// Don't ack message on error - will retry
+				continue
+			}
+
+			fmt.Printf("  Cleanup complete\n")
+
+			// Acknowledge the message
+			m.ackMessage(msg.ID)
+		}
+	}
+
+	return nil
+}
+
+// WitnessMessage represents a mail message for the witness.
+type WitnessMessage struct {
+	ID      string `json:"id"`
+	Subject string `json:"subject"`
+	Body    string `json:"body"`
+	From    string `json:"from"`
+}
+
+// getWitnessMessages retrieves unread messages for the witness.
+func (m *Manager) getWitnessMessages() ([]WitnessMessage, error) {
+	// Use bd mail inbox --json
+	cmd := exec.Command("bd", "mail", "inbox", "--json")
+	cmd.Dir = m.workDir
+	cmd.Env = append(os.Environ(), "BEADS_AGENT_NAME="+m.rig.Name+"-witness")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		// No messages is not an error
+		if strings.Contains(stderr.String(), "no messages") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%s", stderr.String())
+	}
+
+	if stdout.Len() == 0 {
+		return nil, nil
+	}
+
+	var messages []WitnessMessage
+	if err := json.Unmarshal(stdout.Bytes(), &messages); err != nil {
+		// Try parsing as empty array
+		if strings.TrimSpace(stdout.String()) == "[]" {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("parsing messages: %w", err)
+	}
+
+	return messages, nil
+}
+
+// ackMessage acknowledges a message (marks it as read/handled).
+func (m *Manager) ackMessage(id string) {
+	cmd := exec.Command("bd", "mail", "ack", id)
+	cmd.Dir = m.workDir
+	cmd.Run() // Ignore errors
+}
+
+// extractPolecatName extracts the polecat name from a lifecycle request body.
+func extractPolecatName(body string) string {
+	// Look for "Polecat: <name>" pattern
+	re := regexp.MustCompile(`Polecat:\s*(\S+)`)
+	matches := re.FindStringSubmatch(body)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// cleanupPolecat performs the full cleanup sequence for an ephemeral polecat.
+// 1. Kill session
+// 2. Remove worktree
+// 3. Delete branch
+func (m *Manager) cleanupPolecat(polecatName string) error {
+	fmt.Printf("  Cleaning up polecat %s...\n", polecatName)
+
+	// Get managers
+	t := tmux.NewTmux()
+	sessMgr := session.NewManager(t, m.rig)
+	polecatGit := git.NewGit(m.rig.Path)
+	polecatMgr := polecat.NewManager(m.rig, polecatGit)
+
+	// 1. Kill session
+	running, err := sessMgr.IsRunning(polecatName)
+	if err == nil && running {
+		fmt.Printf("    Killing session...\n")
+		if err := sessMgr.Stop(polecatName, true); err != nil {
+			fmt.Printf("    Warning: failed to stop session: %v\n", err)
+		}
+	}
+
+	// 2. Remove worktree (this also removes the directory)
+	fmt.Printf("    Removing worktree...\n")
+	if err := polecatMgr.Remove(polecatName, true); err != nil {
+		// Only error if polecat actually exists
+		if !errors.Is(err, polecat.ErrPolecatNotFound) {
+			return fmt.Errorf("removing worktree: %w", err)
+		}
+	}
+
+	// 3. Delete branch from mayor's clone
+	branchName := fmt.Sprintf("polecat/%s", polecatName)
+	mayorPath := filepath.Join(m.rig.Path, "mayor", "rig")
+	mayorGit := git.NewGit(mayorPath)
+
+	fmt.Printf("    Deleting branch %s...\n", branchName)
+	if err := mayorGit.DeleteBranch(branchName, true); err != nil {
+		// Branch might already be deleted or merged, not a critical error
+		fmt.Printf("    Warning: failed to delete branch: %v\n", err)
+	}
+
+	return nil
 }
 
 // processExists checks if a process with the given PID exists.

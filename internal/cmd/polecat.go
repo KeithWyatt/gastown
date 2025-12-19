@@ -40,11 +40,11 @@ var polecatListCmd = &cobra.Command{
 	Short: "List polecats in a rig",
 	Long: `List polecats in a rig or all rigs.
 
-Output:
-  - Name
-  - State (idle/active/working/done/stuck)
-  - Current issue (if any)
-  - Session status (running/stopped)
+In the ephemeral model, polecats exist only while working. The list shows
+all currently active polecats with their states:
+  - working: Actively working on an issue
+  - done: Completed work, waiting for cleanup
+  - stuck: Needs assistance
 
 Examples:
   gt polecat list gastown
@@ -85,10 +85,13 @@ Example:
 
 var polecatWakeCmd = &cobra.Command{
 	Use:   "wake <rig>/<polecat>",
-	Short: "Mark polecat as active (ready for work)",
-	Long: `Mark polecat as active (ready for work).
+	Short: "(Deprecated) Resume a polecat to working state",
+	Long: `Resume a polecat to working state.
 
-Transitions: idle → active
+DEPRECATED: In the ephemeral model, polecats are created fresh for each task
+via 'gt spawn'. This command is kept for backward compatibility.
+
+Transitions: done → working
 
 Example:
   gt polecat wake gastown/Toast`,
@@ -98,11 +101,14 @@ Example:
 
 var polecatSleepCmd = &cobra.Command{
 	Use:   "sleep <rig>/<polecat>",
-	Short: "Mark polecat as idle (not available)",
-	Long: `Mark polecat as idle (not available).
+	Short: "(Deprecated) Mark polecat as done",
+	Long: `Mark polecat as done.
 
-Transitions: active → idle
-Fails if session is running (stop first).
+DEPRECATED: In the ephemeral model, polecats use 'gt handoff' when complete,
+which triggers automatic cleanup by the Witness. This command is kept for
+backward compatibility.
+
+Transitions: working → done
 
 Example:
   gt polecat sleep gastown/Toast`,
@@ -259,11 +265,11 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(allPolecats) == 0 {
-		fmt.Println("No polecats found.")
+		fmt.Println("No active polecats found.")
 		return nil
 	}
 
-	fmt.Printf("%s\n\n", style.Bold.Render("Polecats"))
+	fmt.Printf("%s\n\n", style.Bold.Render("Active Polecats"))
 	for _, p := range allPolecats {
 		// Session indicator
 		sessionStatus := style.Dim.Render("○")
@@ -271,9 +277,15 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 			sessionStatus = style.Success.Render("●")
 		}
 
+		// Normalize state for display (legacy idle/active → working)
+		displayState := p.State
+		if p.State == polecat.StateIdle || p.State == polecat.StateActive {
+			displayState = polecat.StateWorking
+		}
+
 		// State color
-		stateStr := string(p.State)
-		switch p.State {
+		stateStr := string(displayState)
+		switch displayState {
 		case polecat.StateWorking:
 			stateStr = style.Info.Render(stateStr)
 		case polecat.StateStuck:
@@ -351,6 +363,9 @@ func runPolecatRemove(cmd *cobra.Command, args []string) error {
 }
 
 func runPolecatWake(cmd *cobra.Command, args []string) error {
+	fmt.Println(style.Warning.Render("DEPRECATED: Use 'gt spawn' to create fresh polecats instead"))
+	fmt.Println()
+
 	rigName, polecatName, err := parseAddress(args[0])
 	if err != nil {
 		return err
@@ -365,11 +380,14 @@ func runPolecatWake(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("waking polecat: %w", err)
 	}
 
-	fmt.Printf("%s Polecat %s is now active.\n", style.SuccessPrefix, polecatName)
+	fmt.Printf("%s Polecat %s is now working.\n", style.SuccessPrefix, polecatName)
 	return nil
 }
 
 func runPolecatSleep(cmd *cobra.Command, args []string) error {
+	fmt.Println(style.Warning.Render("DEPRECATED: Use 'gt handoff' from within a polecat session instead"))
+	fmt.Println()
+
 	rigName, polecatName, err := parseAddress(args[0])
 	if err != nil {
 		return err
@@ -385,14 +403,14 @@ func runPolecatSleep(cmd *cobra.Command, args []string) error {
 	sessMgr := session.NewManager(t, r)
 	running, _ := sessMgr.IsRunning(polecatName)
 	if running {
-		return fmt.Errorf("session is running. Stop it first with: gt session stop %s/%s", rigName, polecatName)
+		return fmt.Errorf("session is running. Use 'gt handoff' from the polecat session, or stop it with: gt session stop %s/%s", rigName, polecatName)
 	}
 
 	if err := mgr.Sleep(polecatName); err != nil {
-		return fmt.Errorf("sleeping polecat: %w", err)
+		return fmt.Errorf("marking polecat as done: %w", err)
 	}
 
-	fmt.Printf("%s Polecat %s is now idle.\n", style.SuccessPrefix, polecatName)
+	fmt.Printf("%s Polecat %s is now done.\n", style.SuccessPrefix, polecatName)
 	return nil
 }
 
