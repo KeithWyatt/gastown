@@ -291,19 +291,12 @@ func inferRigFromCwd(townRoot string) (string, error) {
 		return "", fmt.Errorf("not in workspace")
 	}
 
-	// First component should be the rig name
-	parts := filepath.SplitList(rel)
-	if len(parts) == 0 {
-		// Split on path separator instead
-		for i := 0; i < len(rel); i++ {
-			if rel[i] == filepath.Separator {
-				return rel[:i], nil
-			}
-		}
-		// No separator found, entire rel is the rig name
-		if rel != "" && rel != "." {
-			return rel, nil
-		}
+	// Normalize and split path - first component is the rig name
+	rel = filepath.ToSlash(rel)
+	parts := strings.Split(rel, "/")
+
+	if len(parts) > 0 && parts[0] != "" && parts[0] != "." {
+		return parts[0], nil
 	}
 
 	return "", fmt.Errorf("could not infer rig from current directory")
