@@ -4,21 +4,27 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/git"
+	"github.com/steveyegge/gastown/internal/polecat"
+	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 var (
-	shutdownGraceful    bool
-	shutdownWait        int
-	shutdownAll         bool
-	shutdownYes         bool
+	shutdownGraceful     bool
+	shutdownWait         int
+	shutdownAll          bool
+	shutdownYes          bool
 	shutdownPolecatsOnly bool
+	shutdownNuclear      bool
 )
 
 var startCmd = &cobra.Command{
@@ -38,10 +44,15 @@ To stop Gas Town, use 'gt shutdown'.`,
 var shutdownCmd = &cobra.Command{
 	Use:   "shutdown",
 	Short: "Shutdown Gas Town",
-	Long: `Shutdown Gas Town by stopping agents.
+	Long: `Shutdown Gas Town by stopping agents and cleaning up polecats.
 
 By default, preserves crew sessions (your persistent workspaces).
 Prompts for confirmation before stopping.
+
+After killing sessions, polecats are cleaned up:
+  - Worktrees are removed
+  - Polecat branches are deleted
+  - Polecats with uncommitted work are SKIPPED (protected)
 
 Shutdown levels (progressively more aggressive):
   (default)       - Stop infrastructure (Mayor, Deacon, Witnesses, Refineries, Polecats)
@@ -49,7 +60,8 @@ Shutdown levels (progressively more aggressive):
   --polecats-only - Only stop polecats (leaves everything else running)
 
 Use --graceful to allow agents time to save state before killing.
-Use --yes to skip confirmation prompt.`,
+Use --yes to skip confirmation prompt.
+Use --nuclear to force cleanup even if polecats have uncommitted work (DANGER).`,
 	RunE: runShutdown,
 }
 
@@ -64,6 +76,8 @@ func init() {
 		"Skip confirmation prompt")
 	shutdownCmd.Flags().BoolVar(&shutdownPolecatsOnly, "polecats-only", false,
 		"Only stop polecats (minimal shutdown)")
+	shutdownCmd.Flags().BoolVar(&shutdownNuclear, "nuclear", false,
+		"Force cleanup even if polecats have uncommitted work (DANGER: may lose work)")
 
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(shutdownCmd)
@@ -117,6 +131,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 func runShutdown(cmd *cobra.Command, args []string) error {
 	t := tmux.NewTmux()
 
+	// Find workspace root for polecat cleanup
+	townRoot, _ := workspace.FindFromCwd()
+
 	// Collect sessions to show what will be stopped
 	sessions, err := t.ListSessions()
 	if err != nil {
@@ -157,9 +174,9 @@ func runShutdown(cmd *cobra.Command, args []string) error {
 	}
 
 	if shutdownGraceful {
-		return runGracefulShutdown(t, toStop)
+		return runGracefulShutdown(t, toStop, townRoot)
 	}
-	return runImmediateShutdown(t, toStop)
+	return runImmediateShutdown(t, toStop, townRoot)
 }
 
 // categorizeSessions splits sessions into those to stop and those to preserve.
@@ -207,7 +224,7 @@ func categorizeSessions(sessions []string) (toStop, preserved []string) {
 	return
 }
 
-func runGracefulShutdown(t *tmux.Tmux, gtSessions []string) error {
+func runGracefulShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) error {
 	fmt.Printf("Graceful shutdown of Gas Town (waiting up to %ds)...\n\n", shutdownWait)
 
 	// Phase 1: Send ESC to all agents to interrupt them
@@ -246,15 +263,28 @@ func runGracefulShutdown(t *tmux.Tmux, gtSessions []string) error {
 	fmt.Printf("\nPhase 4: Terminating sessions...\n")
 	stopped := killSessionsInOrder(t, gtSessions)
 
+	// Phase 5: Cleanup polecat worktrees and branches
+	fmt.Printf("\nPhase 5: Cleaning up polecats...\n")
+	if townRoot != "" {
+		cleanupPolecats(townRoot)
+	}
+
 	fmt.Println()
 	fmt.Printf("%s Graceful shutdown complete (%d sessions stopped)\n", style.Bold.Render("✓"), stopped)
 	return nil
 }
 
-func runImmediateShutdown(t *tmux.Tmux, gtSessions []string) error {
+func runImmediateShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) error {
 	fmt.Println("Shutting down Gas Town...")
 
 	stopped := killSessionsInOrder(t, gtSessions)
+
+	// Cleanup polecat worktrees and branches
+	if townRoot != "" {
+		fmt.Println()
+		fmt.Println("Cleaning up polecats...")
+		cleanupPolecats(townRoot)
+	}
 
 	fmt.Println()
 	fmt.Printf("%s Gas Town shutdown complete (%d sessions stopped)\n", style.Bold.Render("✓"), stopped)
@@ -307,4 +337,99 @@ func killSessionsInOrder(t *tmux.Tmux, sessions []string) int {
 	}
 
 	return stopped
+}
+
+// cleanupPolecats removes polecat worktrees and branches for all rigs.
+// It refuses to clean up polecats with uncommitted work unless --nuclear is set.
+func cleanupPolecats(townRoot string) {
+	// Load rigs config
+	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
+	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	if err != nil {
+		fmt.Printf("  %s Could not load rigs config: %v\n", style.Dim.Render("○"), err)
+		return
+	}
+
+	g := git.NewGit(townRoot)
+	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
+
+	// Discover all rigs
+	rigs, err := rigMgr.DiscoverRigs()
+	if err != nil {
+		fmt.Printf("  %s Could not discover rigs: %v\n", style.Dim.Render("○"), err)
+		return
+	}
+
+	totalCleaned := 0
+	totalSkipped := 0
+	var uncommittedPolecats []string
+
+	for _, r := range rigs {
+		polecatGit := git.NewGit(r.Path)
+		polecatMgr := polecat.NewManager(r, polecatGit)
+
+		polecats, err := polecatMgr.List()
+		if err != nil {
+			continue
+		}
+
+		for _, p := range polecats {
+			// Check for uncommitted work
+			pGit := git.NewGit(p.ClonePath)
+			status, err := pGit.CheckUncommittedWork()
+			if err != nil {
+				// Can't check, be safe and skip unless nuclear
+				if !shutdownNuclear {
+					fmt.Printf("  %s %s/%s: could not check status, skipping\n",
+						style.Dim.Render("○"), r.Name, p.Name)
+					totalSkipped++
+					continue
+				}
+			} else if !status.Clean() {
+				// Has uncommitted work
+				if !shutdownNuclear {
+					uncommittedPolecats = append(uncommittedPolecats,
+						fmt.Sprintf("%s/%s (%s)", r.Name, p.Name, status.String()))
+					totalSkipped++
+					continue
+				}
+				// Nuclear mode: warn but proceed
+				fmt.Printf("  %s %s/%s: NUCLEAR - removing despite %s\n",
+					style.Bold.Render("⚠"), r.Name, p.Name, status.String())
+			}
+
+			// Clean: remove worktree and branch
+			if err := polecatMgr.RemoveWithOptions(p.Name, true, shutdownNuclear); err != nil {
+				fmt.Printf("  %s %s/%s: cleanup failed: %v\n",
+					style.Dim.Render("○"), r.Name, p.Name, err)
+				totalSkipped++
+				continue
+			}
+
+			// Delete the polecat branch from mayor's clone
+			branchName := fmt.Sprintf("polecat/%s", p.Name)
+			mayorPath := filepath.Join(r.Path, "mayor", "rig")
+			mayorGit := git.NewGit(mayorPath)
+			_ = mayorGit.DeleteBranch(branchName, true) // Ignore errors
+
+			fmt.Printf("  %s %s/%s: cleaned up\n", style.Bold.Render("✓"), r.Name, p.Name)
+			totalCleaned++
+		}
+	}
+
+	// Summary
+	if len(uncommittedPolecats) > 0 {
+		fmt.Println()
+		fmt.Printf("  %s Polecats with uncommitted work (use --nuclear to force):\n",
+			style.Bold.Render("⚠"))
+		for _, pc := range uncommittedPolecats {
+			fmt.Printf("    • %s\n", pc)
+		}
+	}
+
+	if totalCleaned > 0 || totalSkipped > 0 {
+		fmt.Printf("  Cleaned: %d, Skipped: %d\n", totalCleaned, totalSkipped)
+	} else {
+		fmt.Printf("  %s No polecats to clean up\n", style.Dim.Render("○"))
+	}
 }
