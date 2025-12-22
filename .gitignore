@@ -28,3 +28,4 @@ gt
 
 # Runtime state
 state.json
+.runtime/

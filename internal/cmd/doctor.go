@@ -70,6 +70,11 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.Register(doctor.NewWispSizeCheck())
 	d.Register(doctor.NewWispStaleCheck())
 
+	// Config architecture checks
+	d.Register(doctor.NewSettingsCheck())
+	d.Register(doctor.NewRuntimeGitignoreCheck())
+	d.Register(doctor.NewLegacyGastownCheck())
+
 	// Run checks
 	var report *doctor.Report
 	if doctorFix {

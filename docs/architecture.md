@@ -1027,9 +1027,15 @@ The HQ (town root) is created by `gt install`:
 │   ├── beads.db                   # Mayor mail, coordination, handoffs
 │   └── config.yaml
 │
+├── .runtime/                      # Town runtime state (gitignored)
+│   ├── daemon.json                # Daemon PID, heartbeat
+│   ├── deacon.json                # Deacon cycle state
+│   └── agent-requests.json        # Lifecycle requests
+│
 ├── mayor/                         # Mayor configuration and state
 │   ├── town.json                  # {"type": "town", "name": "..."}
 │   ├── rigs.json                  # Registry of managed rigs
+│   ├── config.json                # Town-level config (theme defaults, etc.)
 │   └── state.json                 # Mayor agent state
 │
 ├── rigs/                          # Standard location for rigs
@@ -1042,6 +1048,7 @@ The HQ (town root) is created by `gt install`:
 **Notes**:
 - Mayor's mail is in town beads (`hq-*` issues), not JSONL files
 - Rigs can be in `rigs/` or at HQ root (both work)
+- `.runtime/` is gitignored - contains ephemeral process state
 - See [docs/hq.md](hq.md) for advanced HQ configurations
 
 ### Rig Level
@@ -1050,8 +1057,17 @@ Created by `gt rig add <name> <git-url>`:
 
 ```
 gastown/                           # Rig = container (NOT a git clone)
-├── config.json                    # Rig configuration (git_url, beads prefix)
+├── config.json                    # Rig identity only (type, name, git_url, beads.prefix)
 ├── .beads/ → mayor/rig/.beads     # Symlink to canonical beads in Mayor
+│
+├── settings/                      # Rig behavioral config (git-tracked)
+│   ├── config.json                # Theme, merge_queue, max_workers
+│   └── namepool.json              # Pool settings (style, max)
+│
+├── .runtime/                      # Rig runtime state (gitignored)
+│   ├── witness.json               # Witness process state
+│   ├── refinery.json              # Refinery process state
+│   └── namepool-state.json        # In-use names, overflow counter
 │
 ├── mayor/                         # Mayor's per-rig presence
 │   ├── rig/                       # CANONICAL clone (beads authority)
@@ -1072,6 +1088,11 @@ gastown/                           # Rig = container (NOT a git clone)
     ├── Nux/                       # Worktree from Mayor's clone
     └── Toast/                     # Worktree from Mayor's clone
 ```
+
+**Configuration tiers:**
+- **Identity** (`config.json`): Rig name, git_url, beads prefix - rarely changes
+- **Settings** (`settings/`): Behavioral config - git-tracked, shareable
+- **Runtime** (`.runtime/`): Process state - gitignored, transient
 
 **Beads architecture:**
 - Mayor's clone holds the canonical `.beads/` for the rig
@@ -1499,11 +1520,18 @@ sequenceDiagram
 - Simpler role detection
 - Cleaner directory structure
 
-### 5. Visible Config Directory
+### 5. Three-Tier Configuration Architecture
 
-**Decision**: Use `config/` not `.gastown/` for town configuration.
+**Decision**: Separate identity, settings, and runtime into distinct locations:
+- **Identity** (`config.json`): Rig name, git_url, beads prefix - rarely changes
+- **Settings** (`settings/`): Behavioral config - git-tracked, shareable, visible
+- **Runtime** (`.runtime/`): Process state - gitignored, transient
 
-**Rationale**: AI models often miss hidden directories. Visible is better.
+**Rationale**:
+- AI models often miss hidden directories (so `.gastown/` was bad)
+- Identity config rarely changes; behavioral config may change often
+- Runtime state should never be committed
+- `settings/` is visible to agents, unlike hidden `.gastown/`
 
 ### 6. Rig as Container, Not Clone
 
@@ -1838,9 +1866,9 @@ Work is a continuous stream - you can add new issues, spawn new workers, reprior
 }
 ```
 
-### rig.json (Per-Rig Config)
+### rig.json (Per-Rig Identity)
 
-Each rig has a `config.json` at its root:
+Each rig has a `config.json` at its root containing **identity only** (rarely changes):
 
 ```json
 {
@@ -1852,6 +1880,30 @@ Each rig has a `config.json` at its root:
     "prefix": "wyv",
     "sync_remote": "origin"    // Optional: git remote for bd sync
   }
+}
+```
+
+Behavioral settings live in `settings/config.json` (git-tracked, shareable):
+
+```json
+{
+  "theme": "desert",
+  "merge_queue": {
+    "enabled": true,
+    "auto_merge": true
+  },
+  "max_workers": 5
+}
+```
+
+Runtime state lives in `.runtime/` (gitignored, transient):
+
+```json
+// .runtime/witness.json
+{
+  "state": "running",
+  "started_at": "2024-01-15T10:30:00Z",
+  "stats": { "polecats_spawned": 42 }
 }
 ```
 

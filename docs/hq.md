@@ -131,11 +131,15 @@ Sometimes you need to run multiple Gas Town systems from the same parent directo
 If Python Gas Town (PGT) and Go Gas Town (GGT) both use `~/ai/`:
 ```
 ~/ai/
-├── .gastown/           # PGT config
+├── .gastown/           # PGT runtime config (hidden)
+├── .runtime/           # GGT runtime state (gitignored)
 ├── .beads/             # Which system owns this?
 ├── mayor/              # PGT mayor? GGT mayor?
 └── gastown/            # PGT rig? GGT rig?
 ```
+
+Note: GGT uses `.runtime/` for runtime state and `settings/` for behavioral config.
+PGT uses `.gastown/` for both.
 
 ### Solutions
 
