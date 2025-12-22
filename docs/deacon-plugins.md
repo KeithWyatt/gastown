@@ -163,7 +163,7 @@ parallel: true
 
 # Beads Cleanup
 
-Daily cleanup of ephemeral beads.
+Daily cleanup of wisp storage.
 
 ## Actions
 

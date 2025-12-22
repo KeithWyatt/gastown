@@ -19,7 +19,7 @@ var crewCmd = &cobra.Command{
 	Short: "Manage crew workspaces (user-managed persistent workspaces)",
 	Long: `Crew workers are user-managed persistent workspaces within a rig.
 
-Unlike polecats which are witness-managed and ephemeral, crew workers are:
+Unlike polecats which are witness-managed and transient, crew workers are:
 - Persistent: Not auto-garbage-collected
 - User-managed: Overseer controls lifecycle
 - Long-lived identities: recognizable names like dave, emma, fred

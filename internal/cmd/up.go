@@ -28,7 +28,7 @@ infrastructure agents are running:
   • Mayor     - Global work coordinator
   • Witnesses - Per-rig polecat managers
 
-Polecats are NOT started by this command - they are ephemeral workers
+Polecats are NOT started by this command - they are transient workers
 spawned on demand by the Mayor or Witnesses.
 
 Running 'gt up' multiple times is safe - it only starts services that

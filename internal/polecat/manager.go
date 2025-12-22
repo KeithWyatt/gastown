@@ -452,7 +452,7 @@ func (m *Manager) AssignIssue(name, issue string) error {
 }
 
 // ClearIssue removes the issue assignment from a polecat.
-// In the ephemeral model, this transitions to Done state for cleanup.
+// In the transient model, this transitions to Done state for cleanup.
 // This clears the assignee from the currently assigned issue in beads.
 // If beads is not available, this is a no-op.
 func (m *Manager) ClearIssue(name string) error {
@@ -485,7 +485,7 @@ func (m *Manager) ClearIssue(name string) error {
 }
 
 // Wake transitions a polecat from idle to active.
-// Deprecated: In the ephemeral model, polecats start in working state.
+// Deprecated: In the transient model, polecats start in working state.
 // This method is kept for backward compatibility with existing polecats.
 func (m *Manager) Wake(name string) error {
 	polecat, err := m.Get(name)
@@ -502,7 +502,7 @@ func (m *Manager) Wake(name string) error {
 }
 
 // Sleep transitions a polecat from active to idle.
-// Deprecated: In the ephemeral model, polecats are deleted when done.
+// Deprecated: In the transient model, polecats are deleted when done.
 // This method is kept for backward compatibility.
 func (m *Manager) Sleep(name string) error {
 	polecat, err := m.Get(name)

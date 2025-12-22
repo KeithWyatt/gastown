@@ -41,7 +41,7 @@ var polecatListCmd = &cobra.Command{
 	Short: "List polecats in a rig",
 	Long: `List polecats in a rig or all rigs.
 
-In the ephemeral model, polecats exist only while working. The list shows
+In the transient model, polecats exist only while working. The list shows
 all currently active polecats with their states:
   - working: Actively working on an issue
   - done: Completed work, waiting for cleanup
@@ -91,7 +91,7 @@ var polecatWakeCmd = &cobra.Command{
 	Short: "(Deprecated) Resume a polecat to working state",
 	Long: `Resume a polecat to working state.
 
-DEPRECATED: In the ephemeral model, polecats are created fresh for each task
+DEPRECATED: In the transient model, polecats are created fresh for each task
 via 'gt spawn'. This command is kept for backward compatibility.
 
 Transitions: done → working
@@ -107,7 +107,7 @@ var polecatSleepCmd = &cobra.Command{
 	Short: "(Deprecated) Mark polecat as done",
 	Long: `Mark polecat as done.
 
-DEPRECATED: In the ephemeral model, polecats use 'gt handoff' when complete,
+DEPRECATED: In the transient model, polecats use 'gt handoff' when complete,
 which triggers automatic cleanup by the Witness. This command is kept for
 backward compatibility.
 

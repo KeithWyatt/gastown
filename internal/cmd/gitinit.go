@@ -56,7 +56,7 @@ const HQGitignore = `# Gas Town HQ .gitignore
 # Ignore: Git clones (polecats, mayor/refinery rigs), runtime state
 
 # =============================================================================
-# Runtime state files (ephemeral)
+# Runtime state files (transient)
 # =============================================================================
 **/state.json
 **/*.lock

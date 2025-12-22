@@ -4,12 +4,12 @@ package polecat
 import "time"
 
 // State represents the current state of a polecat.
-// In the ephemeral model, polecats exist only while working.
+// In the transient model, polecats exist only while working.
 type State string
 
 const (
 	// StateWorking means the polecat is actively working on an issue.
-	// This is the initial and primary state for ephemeral polecats.
+	// This is the initial and primary state for transient polecats.
 	StateWorking State = "working"
 
 	// StateDone means the polecat has completed its assigned work
@@ -31,7 +31,7 @@ func (s State) IsWorking() bool {
 }
 
 // IsActive returns true if the polecat session is actively working.
-// For ephemeral polecats, this is true for working state and
+// For transient polecats, this is true for working state and
 // legacy idle/active states (treated as working).
 func (s State) IsActive() bool {
 	return s == StateWorking || s == StateIdle || s == StateActive

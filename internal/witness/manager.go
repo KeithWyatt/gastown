@@ -553,7 +553,7 @@ func extractPolecatName(body string) string {
 	return ""
 }
 
-// cleanupPolecat performs the full cleanup sequence for an ephemeral polecat.
+// cleanupPolecat performs the full cleanup sequence for a transient polecat.
 // 1. Check for uncommitted work (stubbornly refuses to lose work)
 // 2. Kill session
 // 3. Remove worktree

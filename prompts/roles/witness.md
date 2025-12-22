@@ -260,8 +260,8 @@ Before killing ANY polecat session, verify:
 
 **If all checks pass:**
 1. Kill session: `tmux kill-session -t gt-{{ rig }}-<name>`
-2. Remove worktree: `git worktree remove polecats/<name>` (if ephemeral)
-3. Delete branch: `git branch -d polecat/<name>` (if ephemeral)
+2. Remove worktree: `git worktree remove polecats/<name>` (if transient)
+3. Delete branch: `git branch -d polecat/<name>` (if transient)
 
 ---
 
@@ -303,7 +303,7 @@ tmux capture-pane -t gt-{{ rig }}-<name> -p | tail -40
 # Session control
 tmux kill-session -t gt-{{ rig }}-<name>
 
-# Worktree cleanup (for ephemeral polecats)
+# Worktree cleanup (for transient polecats)
 git worktree remove polecats/<name>
 git branch -d polecat/<name>
 

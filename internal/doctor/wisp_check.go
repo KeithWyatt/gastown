@@ -11,26 +11,26 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
-// EphemeralExistsCheck verifies that .beads-ephemeral/ exists for each rig.
-type EphemeralExistsCheck struct {
+// WispExistsCheck verifies that .beads-wisp/ exists for each rig.
+type WispExistsCheck struct {
 	FixableCheck
 	missingRigs []string // Cached for fix
 }
 
-// NewEphemeralExistsCheck creates a new ephemeral exists check.
-func NewEphemeralExistsCheck() *EphemeralExistsCheck {
-	return &EphemeralExistsCheck{
+// NewWispExistsCheck creates a new wisp exists check.
+func NewWispExistsCheck() *WispExistsCheck {
+	return &WispExistsCheck{
 		FixableCheck: FixableCheck{
 			BaseCheck: BaseCheck{
-				CheckName:        "ephemeral-exists",
-				CheckDescription: "Check if ephemeral beads directory exists for each rig",
+				CheckName:        "wisp-exists",
+				CheckDescription: "Check if wisp directory exists for each rig",
 			},
 		},
 	}
 }
 
-// Run checks if .beads-ephemeral/ exists for each rig.
-func (c *EphemeralExistsCheck) Run(ctx *CheckContext) *CheckResult {
+// Run checks if .beads-wisp/ exists for each rig.
+func (c *WispExistsCheck) Run(ctx *CheckContext) *CheckResult {
 	c.missingRigs = nil // Reset cache
 
 	// Find all rigs
@@ -55,8 +55,8 @@ func (c *EphemeralExistsCheck) Run(ctx *CheckContext) *CheckResult {
 	// Check each rig
 	var missing []string
 	for _, rigName := range rigs {
-		ephemeralPath := filepath.Join(ctx.TownRoot, rigName, ".beads-ephemeral")
-		if _, err := os.Stat(ephemeralPath); os.IsNotExist(err) {
+		wispPath := filepath.Join(ctx.TownRoot, rigName, ".beads-wisp")
+		if _, err := os.Stat(wispPath); os.IsNotExist(err) {
 			missing = append(missing, rigName)
 		}
 	}
@@ -66,7 +66,7 @@ func (c *EphemeralExistsCheck) Run(ctx *CheckContext) *CheckResult {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("%d rig(s) missing ephemeral beads directory", len(missing)),
+			Message: fmt.Sprintf("%d rig(s) missing wisp directory", len(missing)),
 			Details: missing,
 			FixHint: "Run 'gt doctor --fix' to create missing directories",
 		}
@@ -75,23 +75,23 @@ func (c *EphemeralExistsCheck) Run(ctx *CheckContext) *CheckResult {
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusOK,
-		Message: fmt.Sprintf("All %d rig(s) have ephemeral beads directory", len(rigs)),
+		Message: fmt.Sprintf("All %d rig(s) have wisp directory", len(rigs)),
 	}
 }
 
-// Fix creates missing .beads-ephemeral/ directories.
-func (c *EphemeralExistsCheck) Fix(ctx *CheckContext) error {
+// Fix creates missing .beads-wisp/ directories.
+func (c *WispExistsCheck) Fix(ctx *CheckContext) error {
 	for _, rigName := range c.missingRigs {
-		ephemeralPath := filepath.Join(ctx.TownRoot, rigName, ".beads-ephemeral")
-		if err := os.MkdirAll(ephemeralPath, 0755); err != nil {
-			return fmt.Errorf("creating %s: %w", ephemeralPath, err)
+		wispPath := filepath.Join(ctx.TownRoot, rigName, ".beads-wisp")
+		if err := os.MkdirAll(wispPath, 0755); err != nil {
+			return fmt.Errorf("creating %s: %w", wispPath, err)
 		}
 	}
 	return nil
 }
 
 // discoverRigs finds all registered rigs.
-func (c *EphemeralExistsCheck) discoverRigs(townRoot string) ([]string, error) {
+func (c *WispExistsCheck) discoverRigs(townRoot string) ([]string, error) {
 	rigsPath := filepath.Join(townRoot, "mayor", "rigs.json")
 	data, err := os.ReadFile(rigsPath)
 	if err != nil {
@@ -113,26 +113,26 @@ func (c *EphemeralExistsCheck) discoverRigs(townRoot string) ([]string, error) {
 	return rigs, nil
 }
 
-// EphemeralGitCheck verifies that .beads-ephemeral/ is a valid git repo.
-type EphemeralGitCheck struct {
+// WispGitCheck verifies that .beads-wisp/ is a valid git repo.
+type WispGitCheck struct {
 	FixableCheck
 	invalidRigs []string // Cached for fix
 }
 
-// NewEphemeralGitCheck creates a new ephemeral git check.
-func NewEphemeralGitCheck() *EphemeralGitCheck {
-	return &EphemeralGitCheck{
+// NewWispGitCheck creates a new wisp git check.
+func NewWispGitCheck() *WispGitCheck {
+	return &WispGitCheck{
 		FixableCheck: FixableCheck{
 			BaseCheck: BaseCheck{
-				CheckName:        "ephemeral-git",
-				CheckDescription: "Check if ephemeral beads directories are valid git repos",
+				CheckName:        "wisp-git",
+				CheckDescription: "Check if wisp directories are valid git repos",
 			},
 		},
 	}
 }
 
-// Run checks if .beads-ephemeral/ directories are valid git repos.
-func (c *EphemeralGitCheck) Run(ctx *CheckContext) *CheckResult {
+// Run checks if .beads-wisp/ directories are valid git repos.
+func (c *WispGitCheck) Run(ctx *CheckContext) *CheckResult {
 	c.invalidRigs = nil // Reset cache
 
 	// Find all rigs
@@ -154,18 +154,18 @@ func (c *EphemeralGitCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 	}
 
-	// Check each rig that has an ephemeral dir
+	// Check each rig that has a wisp dir
 	var invalid []string
 	var checked int
 	for _, rigName := range rigs {
-		ephemeralPath := filepath.Join(ctx.TownRoot, rigName, ".beads-ephemeral")
-		if _, err := os.Stat(ephemeralPath); os.IsNotExist(err) {
-			continue // Skip if directory doesn't exist (handled by ephemeral-exists)
+		wispPath := filepath.Join(ctx.TownRoot, rigName, ".beads-wisp")
+		if _, err := os.Stat(wispPath); os.IsNotExist(err) {
+			continue // Skip if directory doesn't exist (handled by wisp-exists)
 		}
 		checked++
 
 		// Check if it's a valid git repo
-		gitDir := filepath.Join(ephemeralPath, ".git")
+		gitDir := filepath.Join(wispPath, ".git")
 		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 			invalid = append(invalid, rigName)
 		}
@@ -175,7 +175,7 @@ func (c *EphemeralGitCheck) Run(ctx *CheckContext) *CheckResult {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusOK,
-			Message: "No ephemeral beads directories to check",
+			Message: "No wisp directories to check",
 		}
 	}
 
@@ -184,7 +184,7 @@ func (c *EphemeralGitCheck) Run(ctx *CheckContext) *CheckResult {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("%d ephemeral beads directory(ies) not initialized as git", len(invalid)),
+			Message: fmt.Sprintf("%d wisp directory(ies) not initialized as git", len(invalid)),
 			Details: invalid,
 			FixHint: "Run 'gt doctor --fix' to initialize git repos",
 		}
@@ -193,47 +193,47 @@ func (c *EphemeralGitCheck) Run(ctx *CheckContext) *CheckResult {
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusOK,
-		Message: fmt.Sprintf("All %d ephemeral beads directories are valid git repos", checked),
+		Message: fmt.Sprintf("All %d wisp directories are valid git repos", checked),
 	}
 }
 
-// Fix initializes git repos in ephemeral directories.
-func (c *EphemeralGitCheck) Fix(ctx *CheckContext) error {
+// Fix initializes git repos in wisp directories.
+func (c *WispGitCheck) Fix(ctx *CheckContext) error {
 	for _, rigName := range c.invalidRigs {
-		ephemeralPath := filepath.Join(ctx.TownRoot, rigName, ".beads-ephemeral")
+		wispPath := filepath.Join(ctx.TownRoot, rigName, ".beads-wisp")
 		cmd := exec.Command("git", "init")
-		cmd.Dir = ephemeralPath
+		cmd.Dir = wispPath
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("initializing git in %s: %w", ephemeralPath, err)
+			return fmt.Errorf("initializing git in %s: %w", wispPath, err)
 		}
 
-		// Create config.yaml for ephemeral beads
-		configPath := filepath.Join(ephemeralPath, "config.yaml")
-		configContent := "ephemeral: true\n# No sync-branch - ephemeral is local only\n"
+		// Create config.yaml for wisp storage
+		configPath := filepath.Join(wispPath, "config.yaml")
+		configContent := "wisp: true\n# No sync-branch - wisps are local only\n"
 		if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-			return fmt.Errorf("creating config.yaml in %s: %w", ephemeralPath, err)
+			return fmt.Errorf("creating config.yaml in %s: %w", wispPath, err)
 		}
 	}
 	return nil
 }
 
-// EphemeralOrphansCheck detects molecules started but never squashed (>24h old).
-type EphemeralOrphansCheck struct {
+// WispOrphansCheck detects molecules started but never squashed (>24h old).
+type WispOrphansCheck struct {
 	BaseCheck
 }
 
-// NewEphemeralOrphansCheck creates a new ephemeral orphans check.
-func NewEphemeralOrphansCheck() *EphemeralOrphansCheck {
-	return &EphemeralOrphansCheck{
+// NewWispOrphansCheck creates a new wisp orphans check.
+func NewWispOrphansCheck() *WispOrphansCheck {
+	return &WispOrphansCheck{
 		BaseCheck: BaseCheck{
-			CheckName:        "ephemeral-orphans",
-			CheckDescription: "Check for orphaned molecules (>24h old, never squashed)",
+			CheckName:        "wisp-orphans",
+			CheckDescription: "Check for orphaned wisps (>24h old, never squashed)",
 		},
 	}
 }
 
-// Run checks for orphaned molecules.
-func (c *EphemeralOrphansCheck) Run(ctx *CheckContext) *CheckResult {
+// Run checks for orphaned wisps.
+func (c *WispOrphansCheck) Run(ctx *CheckContext) *CheckResult {
 	rigs, err := discoverRigs(ctx.TownRoot)
 	if err != nil {
 		return &CheckResult{
@@ -256,13 +256,13 @@ func (c *EphemeralOrphansCheck) Run(ctx *CheckContext) *CheckResult {
 	cutoff := time.Now().Add(-24 * time.Hour)
 
 	for _, rigName := range rigs {
-		ephemeralPath := filepath.Join(ctx.TownRoot, rigName, ".beads-ephemeral")
-		if _, err := os.Stat(ephemeralPath); os.IsNotExist(err) {
+		wispPath := filepath.Join(ctx.TownRoot, rigName, ".beads-wisp")
+		if _, err := os.Stat(wispPath); os.IsNotExist(err) {
 			continue
 		}
 
 		// Look for molecule directories or issue files older than 24h
-		issuesPath := filepath.Join(ephemeralPath, "issues.jsonl")
+		issuesPath := filepath.Join(wispPath, "issues.jsonl")
 		info, err := os.Stat(issuesPath)
 		if err != nil {
 			continue // No issues file
@@ -279,7 +279,7 @@ func (c *EphemeralOrphansCheck) Run(ctx *CheckContext) *CheckResult {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("%d rig(s) have stale ephemeral data (>24h old)", len(orphans)),
+			Message: fmt.Sprintf("%d rig(s) have stale wisp data (>24h old)", len(orphans)),
 			Details: orphans,
 			FixHint: "Manual review required - these may contain unsquashed work",
 		}
@@ -288,27 +288,27 @@ func (c *EphemeralOrphansCheck) Run(ctx *CheckContext) *CheckResult {
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusOK,
-		Message: "No orphaned molecules found",
+		Message: "No orphaned wisps found",
 	}
 }
 
-// EphemeralSizeCheck warns if ephemeral repo is too large (>100MB).
-type EphemeralSizeCheck struct {
+// WispSizeCheck warns if wisp repo is too large (>100MB).
+type WispSizeCheck struct {
 	BaseCheck
 }
 
-// NewEphemeralSizeCheck creates a new ephemeral size check.
-func NewEphemeralSizeCheck() *EphemeralSizeCheck {
-	return &EphemeralSizeCheck{
+// NewWispSizeCheck creates a new wisp size check.
+func NewWispSizeCheck() *WispSizeCheck {
+	return &WispSizeCheck{
 		BaseCheck: BaseCheck{
-			CheckName:        "ephemeral-size",
-			CheckDescription: "Check if ephemeral beads directories are too large (>100MB)",
+			CheckName:        "wisp-size",
+			CheckDescription: "Check if wisp directories are too large (>100MB)",
 		},
 	}
 }
 
-// Run checks the size of ephemeral beads directories.
-func (c *EphemeralSizeCheck) Run(ctx *CheckContext) *CheckResult {
+// Run checks the size of wisp directories.
+func (c *WispSizeCheck) Run(ctx *CheckContext) *CheckResult {
 	rigs, err := discoverRigs(ctx.TownRoot)
 	if err != nil {
 		return &CheckResult{
@@ -331,12 +331,12 @@ func (c *EphemeralSizeCheck) Run(ctx *CheckContext) *CheckResult {
 	var oversized []string
 
 	for _, rigName := range rigs {
-		ephemeralPath := filepath.Join(ctx.TownRoot, rigName, ".beads-ephemeral")
-		if _, err := os.Stat(ephemeralPath); os.IsNotExist(err) {
+		wispPath := filepath.Join(ctx.TownRoot, rigName, ".beads-wisp")
+		if _, err := os.Stat(wispPath); os.IsNotExist(err) {
 			continue
 		}
 
-		size, err := dirSize(ephemeralPath)
+		size, err := dirSize(wispPath)
 		if err != nil {
 			continue
 		}
@@ -351,7 +351,7 @@ func (c *EphemeralSizeCheck) Run(ctx *CheckContext) *CheckResult {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("%d rig(s) have oversized ephemeral directories", len(oversized)),
+			Message: fmt.Sprintf("%d rig(s) have oversized wisp directories", len(oversized)),
 			Details: oversized,
 			FixHint: "Consider cleaning up old completed molecules",
 		}
@@ -360,27 +360,27 @@ func (c *EphemeralSizeCheck) Run(ctx *CheckContext) *CheckResult {
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusOK,
-		Message: "All ephemeral directories within size limits",
+		Message: "All wisp directories within size limits",
 	}
 }
 
-// EphemeralStaleCheck detects molecules with no activity in the last hour.
-type EphemeralStaleCheck struct {
+// WispStaleCheck detects molecules with no activity in the last hour.
+type WispStaleCheck struct {
 	BaseCheck
 }
 
-// NewEphemeralStaleCheck creates a new ephemeral stale check.
-func NewEphemeralStaleCheck() *EphemeralStaleCheck {
-	return &EphemeralStaleCheck{
+// NewWispStaleCheck creates a new wisp stale check.
+func NewWispStaleCheck() *WispStaleCheck {
+	return &WispStaleCheck{
 		BaseCheck: BaseCheck{
-			CheckName:        "ephemeral-stale",
-			CheckDescription: "Check for stale molecules (no activity in last hour)",
+			CheckName:        "wisp-stale",
+			CheckDescription: "Check for stale wisps (no activity in last hour)",
 		},
 	}
 }
 
-// Run checks for stale molecules.
-func (c *EphemeralStaleCheck) Run(ctx *CheckContext) *CheckResult {
+// Run checks for stale wisps.
+func (c *WispStaleCheck) Run(ctx *CheckContext) *CheckResult {
 	rigs, err := discoverRigs(ctx.TownRoot)
 	if err != nil {
 		return &CheckResult{
@@ -403,15 +403,15 @@ func (c *EphemeralStaleCheck) Run(ctx *CheckContext) *CheckResult {
 	cutoff := time.Now().Add(-1 * time.Hour)
 
 	for _, rigName := range rigs {
-		ephemeralPath := filepath.Join(ctx.TownRoot, rigName, ".beads-ephemeral")
-		if _, err := os.Stat(ephemeralPath); os.IsNotExist(err) {
+		wispPath := filepath.Join(ctx.TownRoot, rigName, ".beads-wisp")
+		if _, err := os.Stat(wispPath); os.IsNotExist(err) {
 			continue
 		}
 
-		// Check for any recent activity in the ephemeral directory
+		// Check for any recent activity in the wisp directory
 		// We look at the most recent modification time of any file
 		var mostRecent time.Time
-		_ = filepath.Walk(ephemeralPath, func(path string, info os.FileInfo, err error) error {
+		_ = filepath.Walk(wispPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil
 			}
@@ -432,7 +432,7 @@ func (c *EphemeralStaleCheck) Run(ctx *CheckContext) *CheckResult {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("%d rig(s) have stale ephemeral activity", len(stale)),
+			Message: fmt.Sprintf("%d rig(s) have stale wisp activity", len(stale)),
 			Details: stale,
 			FixHint: "Check if polecats are stuck or crashed",
 		}
@@ -441,7 +441,7 @@ func (c *EphemeralStaleCheck) Run(ctx *CheckContext) *CheckResult {
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusOK,
-		Message: "No stale ephemeral activity detected",
+		Message: "No stale wisp activity detected",
 	}
 }
 

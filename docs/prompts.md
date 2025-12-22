@@ -159,7 +159,7 @@ gastown/
 │   ├── spawn/
 │   │   ├── new_polecat.md
 │   │   ├── reuse_polecat.md
-│   │   └── ephemeral_worker.md
+│   │   └── transient_worker.md
 │   └── lifecycle/
 │       ├── handoff.md
 │       ├── escalation.md
@@ -175,7 +175,7 @@ type PromptContext struct {
     Role        string
     RigName     string
     PolecatName string
-    Ephemeral   bool
+    Transient   bool
     IssueID     string
     IssueTitle  string
     // ... additional fields
@@ -348,7 +348,7 @@ Crew workers are the overseer's personal workspaces - a new role that differs fr
 ## Your Role: CREW WORKER ({{ name }} in {{ rig }})
 
 You are a **crew worker** - the overseer's (human's) personal workspace within the {{ rig }} rig.
-Unlike polecats which are witness-managed and ephemeral, you are:
+Unlike polecats which are witness-managed and transient, you are:
 
 - **Persistent**: Your workspace is never auto-garbage-collected
 - **User-managed**: The overseer controls your lifecycle, not the Witness

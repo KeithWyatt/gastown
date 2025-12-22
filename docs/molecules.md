@@ -92,7 +92,7 @@ bd mol bond <proto-id> [--wisp] [--assignee=<addr>]
 
 - **Default (Mol)**: Creates a durable molecule tracked in the main `.beads/` database.
   Steps become permanent issues that survive indefinitely.
-- **With --wisp**: Creates an ephemeral molecule in `.beads-ephemeral/`. Steps are
+- **With --wisp**: Creates a wisp (transient molecule) in `.beads-wisp/`. Steps are
   transient and will be cleaned up on squash or burn.
 
 **Examples:**
@@ -133,7 +133,7 @@ bd mol squash <mol-id> --summary='...'
 
 - **For Mol (durable)**: Creates a digest issue in the permanent beads database.
   The digest contains the summary and links back to the original proto.
-- **For Wisp (ephemeral)**: Evaporates the wisp (deletes from `.beads-ephemeral/`)
+- **For Wisp (transient)**: Evaporates the wisp (deletes from `.beads-wisp/`)
   and creates a digest in the permanent database. The execution trace is gone,
   but the outcome is preserved.
 
@@ -181,7 +181,7 @@ bd mol burn <mol-id> [--reason='...']
 
 - Discards all molecule state (steps, progress, artifacts)
 - No digest is created - the molecule leaves no permanent record
-- For Wisps: Simply deletes from `.beads-ephemeral/`
+- For Wisps: Simply deletes from `.beads-wisp/`
 - For Mols: Marks as abandoned/closed without digest
 
 **When to burn vs squash:**

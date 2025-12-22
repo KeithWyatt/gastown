@@ -357,8 +357,8 @@ Molecules follow a **states of matter** metaphor through their lifecycle:
       ┌───────────────┐        ┌───────────────┐
       │     Mol       │        │    Wisp       │
       │   (liquid)    │        │    (gas)      │
-      │   durable     │        │  ephemeral    │
-      │  main beads   │        │ .beads-eph/   │
+      │   durable     │        │  transient    │
+      │  main beads   │        │ .beads-wisp/  │
       └───────┬───────┘        └───────┬───────┘
               │                        │
          bd mol squash            bd mol squash
@@ -374,15 +374,15 @@ Molecules follow a **states of matter** metaphor through their lifecycle:
 **Phase transitions:**
 - **Proto → Mol/Wisp** (`bd mol bond`): Instantiate a template into a running execution
 - **Mol → Digest** (`bd mol squash`): Compress completed work into permanent record
-- **Wisp → (evaporates)** (`bd mol squash` or `bd mol burn`): Ephemeral trace disappears
+- **Wisp → (evaporates)** (`bd mol squash` or `bd mol burn`): Transient trace disappears
 
 ### When to Use Mol vs Wisp
 
-The choice between **Mol** (durable) and **Wisp** (ephemeral) depends on the work's importance and audit requirements:
+The choice between **Mol** (durable) and **Wisp** (transient) depends on the work's importance and audit requirements:
 
-| Aspect | Mol (Durable) | Wisp (Ephemeral) |
+| Aspect | Mol (Durable) | Wisp (Transient) |
 |--------|---------------|------------------|
-| **Storage** | Main `.beads/` database | `.beads-ephemeral/` directory |
+| **Storage** | Main `.beads/` database | `.beads-wisp/` directory |
 | **Persistence** | Survives indefinitely | Evaporates on squash/burn |
 | **Git tracking** | Committed, synced | Never committed |
 | **Audit trail** | Full history preserved | Only digest (if squashed) |
@@ -396,7 +396,7 @@ The choice between **Mol** (durable) and **Wisp** (ephemeral) depends on the wor
 
 **Use Wisp for:**
 - Orchestration tasks (witness patrols, health checks)
-- Polecat work sessions (ephemeral by nature)
+- Polecat work sessions (transient by nature)
 - Patrol loops (continuous monitoring)
 - Routine operations (no audit value)
 
@@ -491,7 +491,7 @@ This is like a **distributed work queue** backed by beads:
 
 ### Wisp Molecules: Transient Execution Traces
 
-**Wisps** are ephemeral execution traces - the "steam" in Gas Town's engine metaphor. When a molecule executes, it generates wisps: transient issues that capture the work being done.
+**Wisps** are transient execution traces - the "steam" in Gas Town's engine metaphor. Claude is fire; Claude Code is a Steam engine; Gas Town is a Steam Train, with Beads as the tracks. Wisps are steam vapors that dissipate after the work is done.
 
 **Why wisps?**
 - **Observability**: See what's happening during execution without cluttering the permanent ledger
@@ -547,8 +547,8 @@ bd mol burn gt-abc123.exec-001           # Discard wisps without digest
 
 **Wisp storage:**
 
-Wisps are stored in a per-rig ephemeral database:
-- `<rig>/.beads-ephemeral/` - Separate from permanent beads, **gitignored**
+Wisps are stored in a per-rig wisp database:
+- `<rig>/.beads-wisp/` - Separate from permanent beads, **gitignored**
 - Fast writes, no sync overhead
 - Auto-cleaned on squash/burn
 - Digests write to permanent beads
@@ -1316,7 +1316,7 @@ Polecats are the workers that do actual implementation:
 4. On completion, polecat generates summary and squashes wisps to digest
 5. Request shutdown, get deleted
 
-The polecat itself is ephemeral, and so is its execution trace (wisps). Only the digest survives.
+The polecat itself is transient, and so is its execution trace (wisps). Only the digest survives.
 
 ## Key Workflows
 
@@ -1694,7 +1694,7 @@ sequenceDiagram
 After Witness kills session:
 - Remove worktree: `git worktree remove polecats/<name>`
 - Delete branch: `git branch -d polecat/<name>`
-- Polecat ceases to exist (ephemeral)
+- Polecat ceases to exist (transient)
 
 ### 13. Resource-Constrained Worker Pool
 
@@ -1807,7 +1807,7 @@ With daemon session cycling, the system can run autonomously for extended period
 - **Workers cycle**: If individual tasks are very large
 - **Daemon persistence**: Survives all agent restarts
 
-The daemon is the only truly persistent component. All agents are ephemeral sessions that hand off state via mail.
+The daemon is the only truly persistent component. All agents are transient sessions that hand off state via mail.
 
 Work is a continuous stream - you can add new issues, spawn new workers, reprioritize the queue, all without "starting a new swarm" or managing batch boundaries.
 
@@ -1900,7 +1900,7 @@ gt handoff             # Polecat requests shutdown (run when done)
 gt session stop <p>    # Kill polecat session (Witness uses this)
 ```
 
-**Note**: `gt wake` and `gt sleep` are deprecated - polecats are ephemeral, not pooled.
+**Note**: `gt wake` and `gt sleep` are deprecated - polecats are transient, not pooled.
 
 ### Landing & Merge Queue
 

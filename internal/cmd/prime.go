@@ -270,7 +270,7 @@ func outputWitnessContext(ctx RoleContext) {
 	fmt.Printf("You are the **Witness** for rig: %s\n\n", style.Bold.Render(ctx.Rig))
 	fmt.Println("## Responsibilities")
 	fmt.Println("- Monitor polecat health via heartbeat")
-	fmt.Println("- Spawn ephemeral agents for stuck polecats")
+	fmt.Println("- Spawn replacement agents for stuck polecats")
 	fmt.Println("- Report rig status to Mayor")
 	fmt.Println()
 	fmt.Println("## Key Commands")

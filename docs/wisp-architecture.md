@@ -1,12 +1,12 @@
-# Wisp Architecture: Ephemeral Molecule Storage
+# Wisp Architecture: Transient Molecule Storage
 
 > Status: Design Spec v1 - December 2024
 
 ## Overview
 
-**Wisps** are ephemeral molecule execution traces - the "steam" in Gas Town's engine
-metaphor. This document specifies where wisps are stored, how they're managed, and
-which roles use them.
+**Wisps** are transient molecule execution traces - the "steam" in Gas Town's engine
+metaphor. Claude is fire; Claude Code is a Steam engine; Gas Town is a Steam Train,
+with Beads as the tracks. Wisps are steam vapors that dissipate after the work is done.
 
 ## Core Principle
 
@@ -15,7 +15,7 @@ which roles use them.
 | Artifact | Storage | Git Tracked | Purpose |
 |----------|---------|-------------|---------|
 | Issues | `.beads/issues.jsonl` | Yes | Permanent project history |
-| Wisps | `.beads-ephemeral/issues.jsonl` | **No** | Transient execution traces |
+| Wisps | `.beads-wisp/issues.jsonl` | **No** | Transient execution traces |
 | Digests | `.beads/issues.jsonl` | Yes | Compressed summaries of squashed wisps |
 
 ## Storage Architecture
@@ -28,27 +28,27 @@ which roles use them.
 │   ├── .beads/                   # CANONICAL rig beads (versioned)
 │   │   ├── issues.jsonl          # Permanent issues + digests
 │   │   ├── config.yaml
-│   │   └── .gitignore            # Excludes .beads-ephemeral
+│   │   └── .gitignore            # Excludes .beads-wisp
 │   │
-│   └── .beads-ephemeral/         # GITIGNORED - local wisps
-│       └── issues.jsonl          # In-progress ephemeral molecules
+│   └── .beads-wisp/              # GITIGNORED - local wisps
+│       └── issues.jsonl          # In-progress wisp molecules
 │
 ├── refinery/rig/                 # Refinery's clone
 │   ├── .beads/                   # Inherits from mayor/rig
-│   └── .beads-ephemeral/         # Refinery's local wisps
+│   └── .beads-wisp/              # Refinery's local wisps
 │
 ├── witness/                      # Witness (no clone needed)
-│   └── .beads-ephemeral/         # Witness's local wisps
+│   └── .beads-wisp/              # Witness's local wisps
 │
 └── polecats/<name>/              # Polecat worktrees
     ├── .beads/                   # Inherits from mayor/rig
-    └── .beads-ephemeral/         # Polecat's local wisps (if using wisps)
+    └── .beads-wisp/              # Polecat's local wisps (if using wisps)
 ```
 
 ### Key Points
 
-1. **`.beads-ephemeral/` is gitignored** - Never synced, never versioned
-2. **Each execution context has its own ephemeral store** - Process isolation
+1. **`.beads-wisp/` is gitignored** - Never synced, never versioned
+2. **Each execution context has its own wisp store** - Process isolation
 3. **Digests go to canonical `.beads/`** - Permanent record after squash
 4. **Wisps are deleted after squash/burn** - No accumulation
 
@@ -56,24 +56,24 @@ which roles use them.
 
 Add to `.beads/.gitignore`:
 ```
-.beads-ephemeral/
+.beads-wisp/
 ```
 
 Or add to rig-level `.gitignore`:
 ```
-**/.beads-ephemeral/
+**/.beads-wisp/
 ```
 
 ## Wisp Lifecycle
 
 ```
-bd mol bond <proto> --ephemeral
+bd mol bond <proto> --wisp
          │
          ▼
 ┌─────────────────────────┐
-│  .beads-ephemeral/      │
+│  .beads-wisp/           │
 │  └── issues.jsonl       │  ← Wisp created here
-│      └── {id, ephemeral: true, ...}
+│      └── {id, wisp: true, ...}
 └────────────┬────────────┘
              │
     ┌────────┴────────┐
@@ -95,9 +95,9 @@ These roles have repetitive/cyclic work that would accumulate without wisps:
 
 | Role | Molecule | Storage Location | Squash Frequency |
 |------|----------|------------------|------------------|
-| **Deacon** | mol-deacon-patrol | mayor/rig/.beads-ephemeral/ | Per cycle |
-| **Witness** | mol-witness-patrol | witness/.beads-ephemeral/ | Per cycle |
-| **Refinery** | mol-refinery-cycle | refinery/rig/.beads-ephemeral/ | Per cycle |
+| **Deacon** | mol-deacon-patrol | mayor/rig/.beads-wisp/ | Per cycle |
+| **Witness** | mol-witness-patrol | witness/.beads-wisp/ | Per cycle |
+| **Refinery** | mol-refinery-cycle | refinery/rig/.beads-wisp/ | Per cycle |
 
 ### Roles That Use Regular Molecules
 
@@ -126,8 +126,8 @@ Every role using wisps must implement this pattern:
 
 ```go
 func patrolCycle() {
-    // 1. Bond ephemeral molecule
-    mol := bdMolBond("mol-<role>-patrol", "--ephemeral")
+    // 1. Bond wisp molecule
+    mol := bdMolBond("mol-<role>-patrol", "--wisp")
 
     // 2. Execute cycle steps
     for _, step := range mol.Steps {
@@ -140,7 +140,7 @@ func patrolCycle() {
 
     // 4. Squash - REQUIRED (this is the cleanup)
     bdMolSquash(mol.ID, "--summary", summary)
-    // Wisp deleted from .beads-ephemeral/
+    // Wisp deleted from .beads-wisp/
     // Digest created in .beads/issues.jsonl
 
     // 5. Sleep until next cycle
@@ -157,11 +157,11 @@ For this architecture to work, Beads needs:
 ### New Commands
 
 ```bash
-# Bond with ephemeral flag
-bd mol bond <proto> --ephemeral
-# Creates in .beads-ephemeral/ instead of .beads/
+# Bond with wisp flag (--ephemeral is an alias)
+bd mol bond <proto> --wisp
+# Creates in .beads-wisp/ instead of .beads/
 
-# List ephemeral molecules
+# List wisps
 bd wisp list
 # Shows in-progress wisps
 
@@ -172,28 +172,28 @@ bd wisp gc
 
 ### Storage Behavior
 
-| Command | With `--ephemeral` | Without |
-|---------|-------------------|---------|
-| `bd mol bond` | Creates in `.beads-ephemeral/` | Creates in `.beads/` |
-| `bd mol step` | Updates in ephemeral | Updates in permanent |
-| `bd mol squash` | Deletes from ephemeral, creates digest in permanent | Creates digest in permanent |
-| `bd mol burn` | Deletes from ephemeral | Marks abandoned in permanent |
+| Command | With `--wisp` | Without |
+|---------|---------------|---------|
+| `bd mol bond` | Creates in `.beads-wisp/` | Creates in `.beads/` |
+| `bd mol step` | Updates in wisp store | Updates in permanent |
+| `bd mol squash` | Deletes from wisp, creates digest in permanent | Creates digest in permanent |
+| `bd mol burn` | Deletes from wisp | Marks abandoned in permanent |
 
 ### Config
 
 ```yaml
 # .beads/config.yaml
-ephemeral:
+wisp:
   enabled: true
-  directory: ../.beads-ephemeral  # Relative to .beads/
-  auto_gc: true                    # Clean orphans on bd init
+  directory: ../.beads-wisp  # Relative to .beads/
+  auto_gc: true              # Clean orphans on bd init
 ```
 
 ## Crash Recovery
 
 If a patrol crashes mid-cycle:
 
-1. **Wisp persists in `.beads-ephemeral/`** - Provides recovery breadcrumb
+1. **Wisp persists in `.beads-wisp/`** - Provides recovery breadcrumb
 2. **On restart, agent can:**
    - Resume from last step (if step tracking is granular)
    - Or burn and start fresh (simpler for patrol loops)
@@ -232,9 +232,10 @@ bd list --type=digest --parent=gt-deacon-patrol
 
 For existing Gas Town installations:
 
-1. **Add `.beads-ephemeral/` to gitignore** (immediate)
-2. **Update patrol runners to use `--ephemeral`** (as patched)
-3. **No migration of existing data** - Fresh start for ephemeral storage
+1. **Add `.beads-wisp/` to gitignore** (immediate)
+2. **Update patrol runners to use `--wisp`** (as patched)
+3. **No migration of existing data** - Fresh start for wisp storage
+4. **Optional**: Remove old `.beads-ephemeral/` directories
 
 ## Open Questions
 
@@ -250,5 +251,5 @@ For existing Gas Town installations:
 
 ## Implementation Tracking
 
-- **Beads**: bd-kwjh (Wisp storage: ephemeral molecule tracking)
-- **Gas Town**: gt-3x0z.9 (mol-deacon-patrol uses ephemeral)
+- **Beads**: bd-kwjh (Wisp storage: transient molecule tracking)
+- **Gas Town**: gt-3x0z.9 (mol-deacon-patrol uses wisps)

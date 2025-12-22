@@ -63,12 +63,12 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.Register(doctor.NewIdentityCollisionCheck())
 	d.Register(doctor.NewThemeCheck())
 
-	// Ephemeral beads checks
-	d.Register(doctor.NewEphemeralExistsCheck())
-	d.Register(doctor.NewEphemeralGitCheck())
-	d.Register(doctor.NewEphemeralOrphansCheck())
-	d.Register(doctor.NewEphemeralSizeCheck())
-	d.Register(doctor.NewEphemeralStaleCheck())
+	// Wisp storage checks
+	d.Register(doctor.NewWispExistsCheck())
+	d.Register(doctor.NewWispGitCheck())
+	d.Register(doctor.NewWispOrphansCheck())
+	d.Register(doctor.NewWispSizeCheck())
+	d.Register(doctor.NewWispStaleCheck())
 
 	// Run checks
 	var report *doctor.Report
