@@ -435,20 +435,33 @@ func (t *Tmux) ApplyTheme(session string, theme Theme) error {
 	return err
 }
 
+// roleIcons maps role names to display icons for the status bar.
+var roleIcons = map[string]string{
+	"coordinator": "🎩", // Mayor
+	"health-check": "🦉", // Deacon
+	"witness":     "👁",
+	"refinery":    "🏭",
+	"crew":        "👷",
+	"polecat":     "😺",
+}
+
 // SetStatusFormat configures the left side of the status bar.
-// Shows: [rig/worker] role
+// Shows: icon [rig/worker] role
 func (t *Tmux) SetStatusFormat(session, rig, worker, role string) error {
-	// Format: [gastown/Rictus] polecat
+	// Get icon for role (empty string if not found)
+	icon := roleIcons[role]
+
+	// Format: 😺 [gastown/Rictus] polecat
 	var left string
 	if rig == "" {
 		// Mayor or other top-level agent
-		left = fmt.Sprintf("[%s] %s ", worker, role)
+		left = fmt.Sprintf("%s [%s] %s ", icon, worker, role)
 	} else {
-		left = fmt.Sprintf("[%s/%s] %s ", rig, worker, role)
+		left = fmt.Sprintf("%s [%s/%s] %s ", icon, rig, worker, role)
 	}
 
-	// Allow enough room for the identity
-	if _, err := t.run("set-option", "-t", session, "status-left-length", "40"); err != nil {
+	// Allow enough room for the identity (increased for icon)
+	if _, err := t.run("set-option", "-t", session, "status-left-length", "45"); err != nil {
 		return err
 	}
 	_, err := t.run("set-option", "-t", session, "status-left", left)
