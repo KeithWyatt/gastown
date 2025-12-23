@@ -247,6 +247,75 @@ func runAccountDefault(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+var accountStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show current account info",
+	Long: `Show which Claude Code account would be used for new sessions.
+
+Displays the currently resolved account based on:
+1. GT_ACCOUNT environment variable (highest priority)
+2. Default account from config
+
+Examples:
+  gt account status           # Show current account
+  GT_ACCOUNT=work gt account status  # Show with env override`,
+	RunE: runAccountStatus,
+}
+
+func runAccountStatus(cmd *cobra.Command, args []string) error {
+	townRoot, err := workspace.FindFromCwd()
+	if err != nil {
+		return fmt.Errorf("finding town root: %w", err)
+	}
+
+	accountsPath := constants.MayorAccountsPath(townRoot)
+
+	// Resolve account (empty flag since we want to show default resolution)
+	configDir, handle, err := config.ResolveAccountConfigDir(accountsPath, "")
+	if err != nil {
+		return fmt.Errorf("resolving account: %w", err)
+	}
+
+	if handle == "" {
+		fmt.Println("No account configured.")
+		fmt.Println("\nTo add an account:")
+		fmt.Println("  gt account add <handle>")
+		return nil
+	}
+
+	// Check if GT_ACCOUNT is overriding
+	envAccount := os.Getenv("GT_ACCOUNT")
+
+	// Load config to get full account info
+	cfg, err := config.LoadAccountsConfig(accountsPath)
+	if err != nil {
+		return fmt.Errorf("loading accounts config: %w", err)
+	}
+
+	acct := cfg.GetAccount(handle)
+	if acct == nil {
+		return fmt.Errorf("account '%s' not found", handle)
+	}
+
+	fmt.Printf("%s\n\n", style.Bold.Render("Current Account"))
+	fmt.Printf("Handle:     %s\n", style.Bold.Render(handle))
+	if acct.Email != "" {
+		fmt.Printf("Email:      %s\n", acct.Email)
+	}
+	if acct.Description != "" {
+		fmt.Printf("Description: %s\n", acct.Description)
+	}
+	fmt.Printf("Config Dir: %s\n", configDir)
+
+	if envAccount != "" {
+		fmt.Printf("\n%s\n", style.Dim.Render("(set via GT_ACCOUNT environment variable)"))
+	} else if handle == cfg.Default {
+		fmt.Printf("\n%s\n", style.Dim.Render("(default account)"))
+	}
+
+	return nil
+}
+
 func init() {
 	// Add flags
 	accountListCmd.Flags().BoolVar(&accountJSON, "json", false, "Output as JSON")
@@ -258,6 +327,7 @@ func init() {
 	accountCmd.AddCommand(accountListCmd)
 	accountCmd.AddCommand(accountAddCmd)
 	accountCmd.AddCommand(accountDefaultCmd)
+	accountCmd.AddCommand(accountStatusCmd)
 
 	rootCmd.AddCommand(accountCmd)
 }
