@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
-	"github.com/steveyegge/gastown/internal/wisp"
 )
 
 var slingCmd = &cobra.Command{
@@ -144,7 +143,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 	// Determine target agent (self or specified)
 	var targetAgent string
 	var targetPane string
-	var hookRoot string // Where to store the hook (role's home)
 	var err error
 
 	if len(args) > 1 {
@@ -157,7 +155,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 				fmt.Printf("Would spawn fresh polecat in rig '%s'\n", rigName)
 				targetAgent = fmt.Sprintf("%s/polecats/<new>", rigName)
 				targetPane = "<new-pane>"
-				hookRoot = fmt.Sprintf("<polecat-worktree-in-%s>", rigName)
 			} else {
 				// Spawn a fresh polecat in the rig
 				fmt.Printf("Target is rig '%s', spawning fresh polecat...\n", rigName)
@@ -167,29 +164,21 @@ func runSling(cmd *cobra.Command, args []string) error {
 				}
 				targetAgent = spawnInfo.AgentID()
 				targetPane = spawnInfo.Pane
-				hookRoot = spawnInfo.ClonePath
 			}
 		} else {
 			// Slinging to an existing agent
-			targetAgent, targetPane, hookRoot, err = resolveTargetAgent(target)
+			targetAgent, targetPane, _, err = resolveTargetAgent(target)
 			if err != nil {
 				return fmt.Errorf("resolving target: %w", err)
 			}
 		}
 	} else {
 		// Slinging to self
-		targetAgent, targetPane, hookRoot, err = resolveSelfTarget()
+		targetAgent, targetPane, _, err = resolveSelfTarget()
 		if err != nil {
 			return err
 		}
 	}
-
-	// Create the slung work wisp
-	sw := wisp.NewSlungWork(beadID, targetAgent)
-	sw.Subject = slingSubject
-	sw.Context = slingMessage
-	sw.Formula = formulaName
-	sw.Args = slingArgs
 
 	// Display what we're doing
 	if formulaName != "" {
@@ -199,32 +188,31 @@ func runSling(cmd *cobra.Command, args []string) error {
 	}
 
 	if slingDryRun {
-		fmt.Printf("Would create wisp: %s\n", wisp.HookPath(hookRoot, targetAgent))
-		fmt.Printf("  bead_id: %s\n", beadID)
+		fmt.Printf("Would run: bd update %s --status=pinned --assignee=%s\n", beadID, targetAgent)
 		if formulaName != "" {
 			fmt.Printf("  formula: %s\n", formulaName)
 		}
-		fmt.Printf("  agent: %s\n", targetAgent)
-		fmt.Printf("  hook_root: %s\n", hookRoot)
 		if slingSubject != "" {
-			fmt.Printf("  subject: %s\n", slingSubject)
+			fmt.Printf("  subject (in nudge): %s\n", slingSubject)
 		}
 		if slingMessage != "" {
 			fmt.Printf("  context: %s\n", slingMessage)
 		}
 		if slingArgs != "" {
-			fmt.Printf("  args: %s\n", slingArgs)
+			fmt.Printf("  args (in nudge): %s\n", slingArgs)
 		}
 		fmt.Printf("Would inject start prompt to pane: %s\n", targetPane)
 		return nil
 	}
 
-	// Write the wisp to the hook
-	if err := wisp.WriteSlungWork(hookRoot, targetAgent, sw); err != nil {
-		return fmt.Errorf("writing wisp: %w", err)
+	// Pin the bead using bd update (discovery-based approach)
+	pinCmd := exec.Command("bd", "update", beadID, "--status=pinned", "--assignee="+targetAgent)
+	pinCmd.Stderr = os.Stderr
+	if err := pinCmd.Run(); err != nil {
+		return fmt.Errorf("pinning bead: %w", err)
 	}
 
-	fmt.Printf("%s Work attached to hook\n", style.Bold.Render("✓"))
+	fmt.Printf("%s Work attached to hook (pinned bead)\n", style.Bold.Render("✓"))
 
 	// Inject the "start now" prompt
 	if err := injectStartPrompt(targetPane, beadID, slingSubject, slingArgs); err != nil {
@@ -406,7 +394,6 @@ func runSlingFormula(args []string) error {
 	// Resolve target agent and pane
 	var targetAgent string
 	var targetPane string
-	var hookRoot string
 	var err error
 
 	if target != "" {
@@ -417,7 +404,6 @@ func runSlingFormula(args []string) error {
 				fmt.Printf("Would spawn fresh polecat in rig '%s'\n", rigName)
 				targetAgent = fmt.Sprintf("%s/polecats/<new>", rigName)
 				targetPane = "<new-pane>"
-				hookRoot = fmt.Sprintf("<polecat-worktree-in-%s>", rigName)
 			} else {
 				// Spawn a fresh polecat in the rig
 				fmt.Printf("Target is rig '%s', spawning fresh polecat...\n", rigName)
@@ -427,18 +413,17 @@ func runSlingFormula(args []string) error {
 				}
 				targetAgent = spawnInfo.AgentID()
 				targetPane = spawnInfo.Pane
-				hookRoot = spawnInfo.ClonePath
 			}
 		} else {
 			// Slinging to an existing agent
-			targetAgent, targetPane, hookRoot, err = resolveTargetAgent(target)
+			targetAgent, targetPane, _, err = resolveTargetAgent(target)
 			if err != nil {
 				return fmt.Errorf("resolving target: %w", err)
 			}
 		}
 	} else {
 		// Slinging to self
-		targetAgent, targetPane, hookRoot, err = resolveSelfTarget()
+		targetAgent, targetPane, _, err = resolveSelfTarget()
 		if err != nil {
 			return err
 		}
@@ -448,7 +433,7 @@ func runSlingFormula(args []string) error {
 
 	if slingDryRun {
 		fmt.Printf("Would cook formula: %s\n", formulaName)
-		fmt.Printf("Would create wisp and attach to hook: %s\n", wisp.HookPath(hookRoot, targetAgent))
+		fmt.Printf("Would create wisp and pin to: %s\n", targetAgent)
 		for _, v := range slingVars {
 			fmt.Printf("  --var %s\n", v)
 		}
@@ -492,20 +477,13 @@ func runSlingFormula(args []string) error {
 
 	fmt.Printf("%s Wisp created: %s\n", style.Bold.Render("✓"), wispResult.RootID)
 
-	// Step 3: Attach to hook
-	sw := wisp.NewSlungWork(wispResult.RootID, targetAgent)
-	sw.Subject = slingSubject
-	if sw.Subject == "" {
-		sw.Subject = fmt.Sprintf("Formula: %s", formulaName)
+	// Step 3: Pin the wisp bead using bd update (discovery-based approach)
+	pinCmd := exec.Command("bd", "update", wispResult.RootID, "--status=pinned", "--assignee="+targetAgent)
+	pinCmd.Stderr = os.Stderr
+	if err := pinCmd.Run(); err != nil {
+		return fmt.Errorf("pinning wisp bead: %w", err)
 	}
-	sw.Context = slingMessage
-	sw.Formula = formulaName
-	sw.Args = slingArgs
-
-	if err := wisp.WriteSlungWork(hookRoot, targetAgent, sw); err != nil {
-		return fmt.Errorf("writing to hook: %w", err)
-	}
-	fmt.Printf("%s Attached to hook\n", style.Bold.Render("✓"))
+	fmt.Printf("%s Attached to hook (pinned bead)\n", style.Bold.Render("✓"))
 
 	// Step 4: Nudge to start
 	if targetPane == "" {

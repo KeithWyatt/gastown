@@ -15,7 +15,6 @@ import (
 	"github.com/steveyegge/gastown/internal/lock"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/templates"
-	"github.com/steveyegge/gastown/internal/wisp"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -533,20 +532,18 @@ func runMailCheckInject(workDir string) {
 // This is key for the autonomous overnight work pattern.
 // The Propulsion Principle: "If you find something on your hook, YOU RUN IT."
 func outputAttachmentStatus(ctx RoleContext) {
-	if ctx.Role != RoleCrew && ctx.Role != RolePolecat {
+	// Skip only unknown roles - all valid roles can have pinned work
+	if ctx.Role == RoleUnknown {
 		return
 	}
 
 	// Check for pinned beads with attachments
 	b := beads.New(ctx.WorkDir)
 
-	// Build assignee string based on role
-	var assignee string
-	switch ctx.Role {
-	case RoleCrew:
-		assignee = fmt.Sprintf("%s/crew/%s", ctx.Rig, ctx.Polecat)
-	case RolePolecat:
-		assignee = fmt.Sprintf("%s/%s", ctx.Rig, ctx.Polecat)
+	// Build assignee string based on role (same as getAgentIdentity)
+	assignee := getAgentIdentity(ctx)
+	if assignee == "" {
+		return
 	}
 
 	// Find pinned beads for this agent
@@ -1271,78 +1268,41 @@ func outputRefineryPatrolContext(ctx RoleContext) {
 	}
 }
 
-// checkSlungWork checks for slung work on the agent's hook.
+// checkSlungWork checks for pinned work on the agent's hook.
 // If found, displays it prominently and tells the agent to execute it.
-// The wisp is burned after the agent acknowledges it.
-// Returns true if slung work was found (caller should skip normal startup directive).
+// Returns true if pinned work was found (caller should skip normal startup directive).
 func checkSlungWork(ctx RoleContext) bool {
-	// Determine agent identity for hook lookup
+	// Determine agent identity
 	agentID := getAgentIdentity(ctx)
 	if agentID == "" {
 		return false
 	}
 
-	// Get the git clone root (hooks are stored at clone root, not cwd)
-	cloneRoot, err := getGitRoot()
-	if err != nil {
-		// Not in a git repo - can't have hooks
+	// Check for pinned beads (the discovery-based hook)
+	b := beads.New(ctx.WorkDir)
+	pinnedBeads, err := b.List(beads.ListOptions{
+		Status:   beads.StatusPinned,
+		Assignee: agentID,
+		Priority: -1,
+	})
+	if err != nil || len(pinnedBeads) == 0 {
+		// No pinned beads - no slung work
 		return false
 	}
 
-	sw, err := wisp.ReadHook(cloneRoot, agentID)
-	if err != nil {
-		if errors.Is(err, wisp.ErrNoHook) {
-			// No hook - normal case, nothing to do
-			return false
-		}
-		// Log other errors (permission, corruption) but continue
-		fmt.Printf("%s Warning: error reading hook: %v\n", style.Dim.Render("⚠"), err)
-		return false
-	}
-
-	// Verify bead exists before showing autonomous mode
-	// Try multiple beads locations: cwd, clone root, and rig's beads dir
-	var stdout bytes.Buffer
-	beadExists := false
-	beadSearchDirs := []string{ctx.WorkDir, cloneRoot}
-	// For Mayor, also try the gastown rig's beads location
-	if ctx.Role == RoleMayor {
-		beadSearchDirs = append(beadSearchDirs, filepath.Join(ctx.TownRoot, "gastown", "mayor", "rig"))
-	}
-	for _, dir := range beadSearchDirs {
-		cmd := exec.Command("bd", "show", sw.BeadID)
-		cmd.Dir = dir
-		stdout.Reset()
-		cmd.Stdout = &stdout
-		cmd.Stderr = nil
-		if cmd.Run() == nil {
-			beadExists = true
-			break
-		}
-	}
-
-	if !beadExists {
-		fmt.Println()
-		fmt.Printf("%s\n\n", style.Bold.Render("## 🎯 SLUNG WORK ON HOOK"))
-		fmt.Printf("  Bead ID: %s\n", style.Bold.Render(sw.BeadID))
-		fmt.Printf("  %s Bead %s not found! It may have been deleted.\n",
-			style.Bold.Render("⚠ WARNING:"), sw.BeadID)
-		fmt.Println("  The hook will NOT be burned. Investigate this issue.")
-		fmt.Println()
-		// Don't burn - leave hook for debugging
-		return false
-	}
+	// Use the first pinned bead (agents typically have one)
+	pinnedBead := pinnedBeads[0]
 
 	// Build the role announcement string
 	roleAnnounce := buildRoleAnnouncement(ctx)
 
-	// Found slung work! Display AUTONOMOUS MODE prominently
+	// Found pinned work! Display AUTONOMOUS MODE prominently
 	fmt.Println()
 	fmt.Printf("%s\n\n", style.Bold.Render("## 🚨 AUTONOMOUS WORK MODE 🚨"))
-	fmt.Println("Work is slung on your hook. After announcing your role, begin IMMEDIATELY.")
+	fmt.Println("Work is pinned to your hook. After announcing your role, begin IMMEDIATELY.")
 	fmt.Println()
 	fmt.Println("1. Announce: \"" + roleAnnounce + "\" (ONE line, no elaboration)")
-	fmt.Printf("2. Then IMMEDIATELY run: `bd show %s`\n", sw.BeadID)
+	fmt.Printf("2. Then IMMEDIATELY run: `bd show %s`\n", pinnedBead.ID)
 	fmt.Println("3. Begin execution - no waiting for user input")
 	fmt.Println()
 	fmt.Println("**DO NOT:**")
@@ -1351,40 +1311,43 @@ func checkSlungWork(ctx RoleContext) bool {
 	fmt.Println("- Describe what you're going to do")
 	fmt.Println()
 
-	// Show the slung work details
-	fmt.Printf("%s\n\n", style.Bold.Render("## Slung Work"))
-	fmt.Printf("  Bead ID: %s\n", style.Bold.Render(sw.BeadID))
-	if sw.Subject != "" {
-		fmt.Printf("  Subject: %s\n", sw.Subject)
-	}
-	if sw.Context != "" {
-		fmt.Printf("  Context: %s\n", sw.Context)
-	}
-	if sw.Args != "" {
-		fmt.Printf("  Args: %s\n", style.Bold.Render(sw.Args))
-		fmt.Println()
-		fmt.Printf("  %s Use these args to guide your execution.\n", style.Bold.Render("→"))
-	}
-	fmt.Printf("  Slung by: %s at %s\n", sw.CreatedBy, sw.CreatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Println()
-
-	// Show bead preview (first 15 lines)
-	lines := strings.Split(stdout.String(), "\n")
-	maxLines := 15
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-		lines = append(lines, "...")
-	}
-	fmt.Println("**Bead preview:**")
-	for _, line := range lines {
-		fmt.Printf("  %s\n", line)
+	// Show the pinned work details
+	fmt.Printf("%s\n\n", style.Bold.Render("## Pinned Work"))
+	fmt.Printf("  Bead ID: %s\n", style.Bold.Render(pinnedBead.ID))
+	fmt.Printf("  Title: %s\n", pinnedBead.Title)
+	if pinnedBead.Description != "" {
+		// Show first few lines of description
+		lines := strings.Split(pinnedBead.Description, "\n")
+		maxLines := 5
+		if len(lines) > maxLines {
+			lines = lines[:maxLines]
+			lines = append(lines, "...")
+		}
+		fmt.Println("  Description:")
+		for _, line := range lines {
+			fmt.Printf("    %s\n", line)
+		}
 	}
 	fmt.Println()
 
-	// Burn the hook now that it's been read and verified
-	if err := wisp.BurnHook(cloneRoot, agentID); err != nil {
-		fmt.Printf("%s Warning: could not burn hook: %v\n", style.Dim.Render("⚠"), err)
+	// Show bead preview using bd show
+	fmt.Println("**Bead details:**")
+	cmd := exec.Command("bd", "show", pinnedBead.ID)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = nil
+	if cmd.Run() == nil {
+		lines := strings.Split(stdout.String(), "\n")
+		maxLines := 15
+		if len(lines) > maxLines {
+			lines = lines[:maxLines]
+			lines = append(lines, "...")
+		}
+		for _, line := range lines {
+			fmt.Printf("  %s\n", line)
+		}
 	}
+	fmt.Println()
 
 	return true
 }

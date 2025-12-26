@@ -35,6 +35,10 @@ func HookPath(root, agent string) string {
 }
 
 // WriteSlungWork writes a slung work hook to the agent's hook file.
+//
+// Deprecated: Hook files are deprecated. Use bd update --status=pinned instead.
+// Work is now tracked via pinned beads (discoverable via query) rather than
+// explicit hook files. This function is kept for backward compatibility.
 func WriteSlungWork(root, agent string, sw *SlungWork) error {
 	dir, err := EnsureDir(root)
 	if err != nil {
@@ -47,6 +51,9 @@ func WriteSlungWork(root, agent string, sw *SlungWork) error {
 
 // ReadHook reads the slung work from an agent's hook file.
 // Returns ErrNoHook if no hook file exists.
+//
+// Deprecated: Hook files are deprecated. Query pinned beads instead.
+// Use beads.List with Status=pinned and Assignee=agent.
 func ReadHook(root, agent string) (*SlungWork, error) {
 	path := HookPath(root, agent)
 
@@ -71,6 +78,9 @@ func ReadHook(root, agent string) (*SlungWork, error) {
 }
 
 // BurnHook removes an agent's hook file after it has been picked up.
+//
+// Deprecated: Hook files are deprecated. Work is tracked via pinned beads
+// which don't need burning - just unpin with bd update --status=open.
 func BurnHook(root, agent string) error {
 	path := HookPath(root, agent)
 	err := os.Remove(path)
@@ -81,6 +91,8 @@ func BurnHook(root, agent string) error {
 }
 
 // HasHook checks if an agent has a hook file.
+//
+// Deprecated: Hook files are deprecated. Query pinned beads instead.
 func HasHook(root, agent string) bool {
 	path := HookPath(root, agent)
 	_, err := os.Stat(path)
@@ -88,6 +100,8 @@ func HasHook(root, agent string) bool {
 }
 
 // ListHooks returns a list of agents with active hooks.
+//
+// Deprecated: Hook files are deprecated. Query pinned beads instead.
 func ListHooks(root string) ([]string, error) {
 	dir := filepath.Join(root, WispDir)
 	entries, err := os.ReadDir(dir)

@@ -1,12 +1,22 @@
 // Package wisp provides hook file support for Gas Town agents.
 //
-// Hooks are used to attach work to an agent for restart-and-resume:
-//   - hook-<agent>.json files track what bead is assigned to an agent
+// DEPRECATED: Hook files are deprecated in favor of pinned beads.
+// Work is now tracked via beads with status=pinned and assignee=agent,
+// which can be discovered via query rather than explicit file management.
+//
+// Commands like `gt hook`, `gt sling`, `gt handoff` now use:
+//
+//	bd update <bead> --status=pinned --assignee=<agent>
+//
+// On session start, agents query for pinned beads rather than reading hook files.
+// This follows Gas Town's "discovery over explicit state" principle.
+//
+// The hook file functions are kept for backward compatibility but are deprecated.
+// Old hook files:
+//   - hook-<agent>.json files tracked what bead was assigned to an agent
 //   - Created by `gt hook`, `gt sling`, `gt handoff`
 //   - Read on session start to restore work context
 //   - Burned after pickup
-//
-// Hook files live in .beads/ alongside other beads data.
 package wisp
 
 import (

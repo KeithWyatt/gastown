@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
-	"github.com/steveyegge/gastown/internal/wisp"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -504,29 +503,26 @@ func hookBeadForHandoff(beadID string) error {
 		return fmt.Errorf("bead '%s' not found", beadID)
 	}
 
-	// Determine agent identity and clone root
-	agentID, _, cloneRoot, err := resolveSelfTarget()
+	// Determine agent identity
+	agentID, _, _, err := resolveSelfTarget()
 	if err != nil {
 		return fmt.Errorf("detecting agent identity: %w", err)
 	}
 
-	// Create the slung work wisp
-	sw := wisp.NewSlungWork(beadID, agentID)
-	sw.Subject = handoffSubject
-	sw.Context = handoffMessage
-
 	fmt.Printf("%s Hooking %s...\n", style.Bold.Render("🪝"), beadID)
 
 	if handoffDryRun {
-		fmt.Printf("Would create wisp: %s\n", wisp.HookPath(cloneRoot, agentID))
+		fmt.Printf("Would run: bd update %s --status=pinned --assignee=%s\n", beadID, agentID)
 		return nil
 	}
 
-	// Write the wisp to the hook
-	if err := wisp.WriteSlungWork(cloneRoot, agentID, sw); err != nil {
-		return fmt.Errorf("writing wisp: %w", err)
+	// Pin the bead using bd update (discovery-based approach)
+	pinCmd := exec.Command("bd", "update", beadID, "--status=pinned", "--assignee="+agentID)
+	pinCmd.Stderr = os.Stderr
+	if err := pinCmd.Run(); err != nil {
+		return fmt.Errorf("pinning bead: %w", err)
 	}
 
-	fmt.Printf("%s Work attached to hook\n", style.Bold.Render("✓"))
+	fmt.Printf("%s Work attached to hook (pinned bead)\n", style.Bold.Render("✓"))
 	return nil
 }

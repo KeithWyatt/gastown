@@ -258,16 +258,8 @@ func runMoleculeStatus(cmd *cobra.Command, args []string) error {
 		HasWork: len(pinnedBeads) > 0,
 	}
 
-	// Also check for wisp hook files (from gt hook/sling/handoff)
-	// These are stored at the git clone root, not the beads dir
-	gitRoot, _ := getGitRootForMolStatus()
-	if gitRoot != "" {
-		sw, err := wisp.ReadHook(gitRoot, target)
-		if err == nil && sw != nil {
-			status.SlungWork = sw
-			status.HasWork = true
-		}
-	}
+	// Note: Hook files are deprecated. Work is now tracked via pinned beads only.
+	// The SlungWork field is kept for backward compatibility but will be nil.
 
 	if len(pinnedBeads) > 0 {
 		// Take the first pinned bead (agents typically have one pinned bead)

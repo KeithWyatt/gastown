@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/wisp"
 )
 
 var hookCmd = &cobra.Command{
@@ -64,38 +63,33 @@ func runHook(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Determine agent identity and clone root
-	agentID, _, cloneRoot, err := resolveSelfTarget()
+	// Determine agent identity
+	agentID, _, _, err := resolveSelfTarget()
 	if err != nil {
 		return fmt.Errorf("detecting agent identity: %w", err)
 	}
 
-	// Create the slung work wisp
-	sw := wisp.NewSlungWork(beadID, agentID)
-	sw.Subject = hookSubject
-	sw.Context = hookMessage
-
 	fmt.Printf("%s Hooking %s...\n", style.Bold.Render("🪝"), beadID)
 
 	if hookDryRun {
-		fmt.Printf("Would create wisp: %s\n", wisp.HookPath(cloneRoot, agentID))
-		fmt.Printf("  bead_id: %s\n", beadID)
-		fmt.Printf("  agent: %s\n", agentID)
+		fmt.Printf("Would run: bd update %s --status=pinned --assignee=%s\n", beadID, agentID)
 		if hookSubject != "" {
-			fmt.Printf("  subject: %s\n", hookSubject)
+			fmt.Printf("  subject (for handoff mail): %s\n", hookSubject)
 		}
 		if hookMessage != "" {
-			fmt.Printf("  context: %s\n", hookMessage)
+			fmt.Printf("  context (for handoff mail): %s\n", hookMessage)
 		}
 		return nil
 	}
 
-	// Write the wisp to the hook
-	if err := wisp.WriteSlungWork(cloneRoot, agentID, sw); err != nil {
-		return fmt.Errorf("writing wisp: %w", err)
+	// Pin the bead using bd update (discovery-based approach)
+	pinCmd := exec.Command("bd", "update", beadID, "--status=pinned", "--assignee="+agentID)
+	pinCmd.Stderr = os.Stderr
+	if err := pinCmd.Run(); err != nil {
+		return fmt.Errorf("pinning bead: %w", err)
 	}
 
-	fmt.Printf("%s Work attached to hook\n", style.Bold.Render("✓"))
+	fmt.Printf("%s Work attached to hook (pinned bead)\n", style.Bold.Render("✓"))
 	fmt.Printf("  Use 'gt handoff' to restart with this work\n")
 	fmt.Printf("  Use 'gt mol status' to see hook status\n")
 
