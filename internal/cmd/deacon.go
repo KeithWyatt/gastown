@@ -1113,7 +1113,7 @@ func getPolecatStaleness(polecatPath string) time.Duration {
 }
 
 // nukeZombie cleans up a zombie polecat.
-func nukeZombie(townRoot string, z zombieInfo, t *tmux.Tmux) error {
+func nukeZombie(townRoot string, z zombieInfo, t *tmux.Tmux) error { //nolint:unparam // error return kept for future use
 	// Step 1: Kill tmux session if somehow still exists
 	if exists, _ := t.HasSession(z.sessionName); exists {
 		_ = t.KillSession(z.sessionName)
@@ -1226,7 +1226,7 @@ func sendMail(townRoot, to, subject, body string) {
 }
 
 // updateAgentBeadState updates an agent bead's state.
-func updateAgentBeadState(townRoot, agent, state, reason string) {
+func updateAgentBeadState(townRoot, agent, state, _ string) { // reason unused but kept for API consistency
 	townName, err := workspace.GetTownName(townRoot)
 	if err != nil {
 		return
