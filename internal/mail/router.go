@@ -1,12 +1,10 @@
 package mail
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -448,24 +446,13 @@ func (r *Router) queryAgents(descContains string) ([]*agentBead, error) {
 		args = append(args, "--desc-contains="+descContains)
 	}
 
-	cmd := exec.Command("bd", args...)
-	cmd.Env = append(cmd.Environ(), "BEADS_DIR="+beadsDir)
-	cmd.Dir = filepath.Dir(beadsDir)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg != "" {
-			return nil, errors.New(errMsg)
-		}
+	stdout, err := runBdCommand(args, filepath.Dir(beadsDir), beadsDir)
+	if err != nil {
 		return nil, fmt.Errorf("querying agents: %w", err)
 	}
 
 	var agents []*agentBead
-	if err := json.Unmarshal(stdout.Bytes(), &agents); err != nil {
+	if err := json.Unmarshal(stdout, &agents); err != nil {
 		return nil, fmt.Errorf("parsing agent query result: %w", err)
 	}
 
@@ -617,20 +604,8 @@ func (r *Router) sendToSingle(msg *Message) error {
 	}
 
 	beadsDir := r.resolveBeadsDir(msg.To)
-	cmd := exec.Command("bd", args...) //nolint:gosec // G204: bd is a trusted internal tool
-	cmd.Env = append(cmd.Environ(),
-		"BEADS_DIR="+beadsDir,
-	)
-	cmd.Dir = filepath.Dir(beadsDir) // Run in parent of .beads
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg != "" {
-			return errors.New(errMsg)
-		}
+	_, err := runBdCommand(args, filepath.Dir(beadsDir), beadsDir)
+	if err != nil {
 		return fmt.Errorf("sending message: %w", err)
 	}
 
@@ -739,20 +714,8 @@ func (r *Router) sendToQueue(msg *Message) error {
 
 	// Queue messages go to town-level beads (shared location)
 	beadsDir := r.resolveBeadsDir("")
-	cmd := exec.Command("bd", args...) //nolint:gosec // G204: args are constructed internally, not from user input
-	cmd.Env = append(cmd.Environ(),
-		"BEADS_DIR="+beadsDir,
-	)
-	cmd.Dir = filepath.Dir(beadsDir) // Run in parent of .beads
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg != "" {
-			return errors.New(errMsg)
-		}
+	_, err = runBdCommand(args, filepath.Dir(beadsDir), beadsDir)
+	if err != nil {
 		return fmt.Errorf("sending to queue %s: %w", queueName, err)
 	}
 
@@ -822,20 +785,8 @@ func (r *Router) sendToAnnounce(msg *Message) error {
 
 	// Announce messages go to town-level beads (shared location)
 	beadsDir := r.resolveBeadsDir("")
-	cmd := exec.Command("bd", args...) //nolint:gosec // G204: args are constructed internally, not from user input
-	cmd.Env = append(cmd.Environ(),
-		"BEADS_DIR="+beadsDir,
-	)
-	cmd.Dir = filepath.Dir(beadsDir) // Run in parent of .beads
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg != "" {
-			return errors.New(errMsg)
-		}
+	_, err = runBdCommand(args, filepath.Dir(beadsDir), beadsDir)
+	if err != nil {
 		return fmt.Errorf("sending to announce %s: %w", announceName, err)
 	}
 
@@ -864,19 +815,8 @@ func (r *Router) pruneAnnounce(announceName string, retainCount int) error {
 		"--asc", // Oldest first
 	}
 
-	cmd := exec.Command("bd", args...) //nolint:gosec // G204: args are constructed internally
-	cmd.Env = append(cmd.Environ(), "BEADS_DIR="+beadsDir)
-	cmd.Dir = filepath.Dir(beadsDir)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg != "" {
-			return errors.New(errMsg)
-		}
+	stdout, err := runBdCommand(args, filepath.Dir(beadsDir), beadsDir)
+	if err != nil {
 		return fmt.Errorf("querying announce messages: %w", err)
 	}
 
@@ -884,7 +824,7 @@ func (r *Router) pruneAnnounce(announceName string, retainCount int) error {
 	var messages []struct {
 		ID string `json:"id"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &messages); err != nil {
+	if err := json.Unmarshal(stdout, &messages); err != nil {
 		return fmt.Errorf("parsing announce messages: %w", err)
 	}
 
@@ -899,12 +839,8 @@ func (r *Router) pruneAnnounce(announceName string, retainCount int) error {
 	// Delete oldest messages
 	for i := 0; i < toDelete && i < len(messages); i++ {
 		deleteArgs := []string{"close", messages[i].ID, "--reason=retention pruning"}
-		deleteCmd := exec.Command("bd", deleteArgs...) //nolint:gosec // G204: args are constructed internally
-		deleteCmd.Env = append(deleteCmd.Environ(), "BEADS_DIR="+beadsDir)
-		deleteCmd.Dir = filepath.Dir(beadsDir)
-
 		// Best-effort deletion - don't fail if one delete fails
-		_ = deleteCmd.Run()
+		_, _ = runBdCommand(deleteArgs, filepath.Dir(beadsDir), beadsDir)
 	}
 
 	return nil
