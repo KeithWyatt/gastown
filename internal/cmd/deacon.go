@@ -186,6 +186,22 @@ This helps the Deacon understand which agents may need attention.`,
 	RunE: runDeaconHealthState,
 }
 
+var deaconStaleHooksCmd = &cobra.Command{
+	Use:   "stale-hooks",
+	Short: "Find and unhook stale hooked beads",
+	Long: `Find beads stuck in 'hooked' status and unhook them if the agent is gone.
+
+Beads can get stuck in 'hooked' status when agents die or abandon work.
+This command finds hooked beads older than the threshold (default: 1 hour),
+checks if the assignee agent is still alive, and unhooks them if not.
+
+Examples:
+  gt deacon stale-hooks                 # Find and unhook stale beads
+  gt deacon stale-hooks --dry-run       # Preview what would be unhooked
+  gt deacon stale-hooks --max-age=30m   # Use 30 minute threshold`,
+	RunE: runDeaconStaleHooks,
+}
+
 
 var (
 	triggerTimeout time.Duration
@@ -198,6 +214,10 @@ var (
 	// Force kill flags
 	forceKillReason     string
 	forceKillSkipNotify bool
+
+	// Stale hooks flags
+	staleHooksMaxAge time.Duration
+	staleHooksDryRun bool
 )
 
 func init() {
@@ -211,6 +231,7 @@ func init() {
 	deaconCmd.AddCommand(deaconHealthCheckCmd)
 	deaconCmd.AddCommand(deaconForceKillCmd)
 	deaconCmd.AddCommand(deaconHealthStateCmd)
+	deaconCmd.AddCommand(deaconStaleHooksCmd)
 
 	// Flags for trigger-pending
 	deaconTriggerPendingCmd.Flags().DurationVar(&triggerTimeout, "timeout", 2*time.Second,
@@ -229,6 +250,12 @@ func init() {
 		"Reason for force-kill (included in notifications)")
 	deaconForceKillCmd.Flags().BoolVar(&forceKillSkipNotify, "skip-notify", false,
 		"Skip sending notification mail to mayor")
+
+	// Flags for stale-hooks
+	deaconStaleHooksCmd.Flags().DurationVar(&staleHooksMaxAge, "max-age", 1*time.Hour,
+		"Maximum age before a hooked bead is considered stale")
+	deaconStaleHooksCmd.Flags().BoolVar(&staleHooksDryRun, "dry-run", false,
+		"Preview what would be unhooked without making changes")
 
 	rootCmd.AddCommand(deaconCmd)
 }
@@ -906,5 +933,70 @@ func updateAgentBeadState(townRoot, agent, state, _ string) { // reason unused b
 	cmd := exec.Command("bd", "agent", "state", beadID, state)
 	cmd.Dir = townRoot
 	_ = cmd.Run() // Best effort
+}
+
+// runDeaconStaleHooks finds and unhooks stale hooked beads.
+func runDeaconStaleHooks(cmd *cobra.Command, args []string) error {
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	cfg := &deacon.StaleHookConfig{
+		MaxAge: staleHooksMaxAge,
+		DryRun: staleHooksDryRun,
+	}
+
+	result, err := deacon.ScanStaleHooks(townRoot, cfg)
+	if err != nil {
+		return fmt.Errorf("scanning stale hooks: %w", err)
+	}
+
+	// Print summary
+	if result.TotalHooked == 0 {
+		fmt.Printf("%s No hooked beads found\n", style.Dim.Render("○"))
+		return nil
+	}
+
+	fmt.Printf("%s Found %d hooked bead(s), %d stale (older than %s)\n",
+		style.Bold.Render("●"), result.TotalHooked, result.StaleCount, staleHooksMaxAge)
+
+	if result.StaleCount == 0 {
+		fmt.Printf("%s No stale hooked beads\n", style.Dim.Render("○"))
+		return nil
+	}
+
+	// Print details for each stale bead
+	for _, r := range result.Results {
+		status := style.Dim.Render("○")
+		action := "skipped (agent alive)"
+
+		if !r.AgentAlive {
+			if staleHooksDryRun {
+				status = style.Bold.Render("?")
+				action = "would unhook (agent dead)"
+			} else if r.Unhooked {
+				status = style.Bold.Render("✓")
+				action = "unhooked (agent dead)"
+			} else if r.Error != "" {
+				status = style.Dim.Render("✗")
+				action = fmt.Sprintf("error: %s", r.Error)
+			}
+		}
+
+		fmt.Printf("  %s %s: %s (age: %s, assignee: %s)\n",
+			status, r.BeadID, action, r.Age, r.Assignee)
+	}
+
+	// Summary
+	if staleHooksDryRun {
+		fmt.Printf("\n%s Dry run - no changes made. Run without --dry-run to unhook.\n",
+			style.Dim.Render("ℹ"))
+	} else if result.Unhooked > 0 {
+		fmt.Printf("\n%s Unhooked %d stale bead(s)\n",
+			style.Bold.Render("✓"), result.Unhooked)
+	}
+
+	return nil
 }
 
