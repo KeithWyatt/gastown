@@ -64,11 +64,23 @@ var slingCmd = &cobra.Command{
 
 This is THE command for assigning work in Gas Town. It handles:
   - Existing agents (mayor, crew, witness, refinery)
-  - Auto-spawning polecats when target is a rig
+  - Auto-spawning polecats when target is a rig (reuses idle ones first!)
   - Dispatching to dogs (Deacon's helper workers)
   - Formula instantiation and wisp creation
   - No-tmux mode for manual agent operation
   - Auto-convoy creation for dashboard visibility
+
+Idle Polecat Reuse:
+  When slinging to a rig, sling prefers reusing idle polecats over spawning new
+  ones. This reduces process accumulation and provides faster startup since the
+  worktree already exists. A polecat is idle when:
+    - State is 'done' (no work in progress)
+    - Session is not running
+    - Hook is empty (no work attached)
+    - No unread mail
+
+  gt sling gt-abc gastown              # Reuses idle polecat if available
+  gt sling gt-abc gastown --fresh      # Force new polecat spawn
 
 Auto-Convoy:
   When slinging a single issue (not a formula), sling automatically creates
@@ -88,6 +100,7 @@ Target Resolution:
   gt sling gt-abc deacon/dogs/alpha     # Specific dog
 
 Spawning Options (when target is a rig):
+  gt sling gp-abc greenplace --fresh                # Force new polecat (skip idle reuse)
   gt sling gp-abc greenplace --create               # Create polecat if missing
   gt sling gp-abc greenplace --naked                # No-tmux (manual start)
   gt sling gp-abc greenplace --force                # Ignore unread mail
@@ -139,6 +152,7 @@ var (
 	slingAccount  string // --account: Claude Code account handle to use
 	slingAgent    string // --agent: override runtime agent for this sling/spawn
 	slingNoConvoy bool   // --no-convoy: skip auto-convoy creation
+	slingFresh    bool   // --fresh: force spawning a new polecat (skip idle reuse)
 )
 
 func init() {
@@ -156,6 +170,7 @@ func init() {
 	slingCmd.Flags().StringVar(&slingAccount, "account", "", "Claude Code account handle to use")
 	slingCmd.Flags().StringVar(&slingAgent, "agent", "", "Override agent/runtime for this sling (e.g., claude, gemini, codex, or custom alias)")
 	slingCmd.Flags().BoolVar(&slingNoConvoy, "no-convoy", false, "Skip auto-convoy creation for single-issue sling")
+	slingCmd.Flags().BoolVar(&slingFresh, "fresh", false, "Force spawning a new polecat (skip idle reuse)")
 
 	rootCmd.AddCommand(slingCmd)
 }
@@ -270,15 +285,23 @@ func runSling(cmd *cobra.Command, args []string) error {
 			// Check if target is a rig name (auto-spawn polecat)
 			if slingDryRun {
 				// Dry run - just indicate what would happen
-				fmt.Printf("Would spawn fresh polecat in rig '%s'\n", rigName)
+				if slingFresh {
+					fmt.Printf("Would spawn fresh polecat in rig '%s' (--fresh)\n", rigName)
+				} else {
+					fmt.Printf("Would reuse idle polecat or spawn new in rig '%s'\n", rigName)
+				}
 				if slingNaked {
 					fmt.Printf("  --naked: would skip tmux session\n")
 				}
 				targetAgent = fmt.Sprintf("%s/polecats/<new>", rigName)
 				targetPane = "<new-pane>"
 			} else {
-				// Spawn a fresh polecat in the rig
-				fmt.Printf("Target is rig '%s', spawning fresh polecat...\n", rigName)
+				// Spawn a polecat in the rig (reuses idle polecat unless --fresh)
+				if slingFresh {
+					fmt.Printf("Target is rig '%s', spawning fresh polecat (--fresh)...\n", rigName)
+				} else {
+					fmt.Printf("Target is rig '%s', looking for idle polecat or spawning new...\n", rigName)
+				}
 				spawnOpts := SlingSpawnOptions{
 					Force:    slingForce,
 					Naked:    slingNaked,
@@ -286,6 +309,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 					Create:   slingCreate,
 					HookBead: beadID, // Set atomically at spawn time
 					Agent:    slingAgent,
+					Fresh:    slingFresh,
 				}
 				spawnInfo, spawnErr := SpawnPolecatForSling(rigName, spawnOpts)
 				if spawnErr != nil {
@@ -898,21 +922,30 @@ func runSlingFormula(args []string) error {
 			// Check if target is a rig name (auto-spawn polecat)
 			if slingDryRun {
 				// Dry run - just indicate what would happen
-				fmt.Printf("Would spawn fresh polecat in rig '%s'\n", rigName)
+				if slingFresh {
+					fmt.Printf("Would spawn fresh polecat in rig '%s' (--fresh)\n", rigName)
+				} else {
+					fmt.Printf("Would reuse idle polecat or spawn new in rig '%s'\n", rigName)
+				}
 				if slingNaked {
 					fmt.Printf("  --naked: would skip tmux session\n")
 				}
 				targetAgent = fmt.Sprintf("%s/polecats/<new>", rigName)
 				targetPane = "<new-pane>"
 			} else {
-				// Spawn a fresh polecat in the rig
-				fmt.Printf("Target is rig '%s', spawning fresh polecat...\n", rigName)
+				// Spawn a polecat in the rig (reuses idle polecat unless --fresh)
+				if slingFresh {
+					fmt.Printf("Target is rig '%s', spawning fresh polecat (--fresh)...\n", rigName)
+				} else {
+					fmt.Printf("Target is rig '%s', looking for idle polecat or spawning new...\n", rigName)
+				}
 				spawnOpts := SlingSpawnOptions{
 					Force:   slingForce,
 					Naked:   slingNaked,
 					Account: slingAccount,
 					Create:  slingCreate,
 					Agent:   slingAgent,
+					Fresh:   slingFresh,
 				}
 				spawnInfo, spawnErr := SpawnPolecatForSling(rigName, spawnOpts)
 				if spawnErr != nil {
@@ -1447,7 +1480,7 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 			continue
 		}
 
-		// Spawn a fresh polecat
+		// Spawn a polecat (reuses idle polecat unless --fresh)
 		spawnOpts := SlingSpawnOptions{
 			Force:    slingForce,
 			Naked:    slingNaked,
@@ -1455,6 +1488,7 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 			Create:   slingCreate,
 			HookBead: beadID, // Set atomically at spawn time
 			Agent:    slingAgent,
+			Fresh:    slingFresh,
 		}
 		spawnInfo, err := SpawnPolecatForSling(rigName, spawnOpts)
 		if err != nil {

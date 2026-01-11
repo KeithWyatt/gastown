@@ -39,10 +39,12 @@ type SlingSpawnOptions struct {
 	Create   bool   // Create polecat if it doesn't exist (currently always true for sling)
 	HookBead string // Bead ID to set as hook_bead at spawn time (atomic assignment)
 	Agent    string // Agent override for this spawn (e.g., "gemini", "codex", "claude-haiku")
+	Fresh    bool   // Force spawning a new polecat, skip idle reuse check
 }
 
-// SpawnPolecatForSling creates a fresh polecat and optionally starts its session.
+// SpawnPolecatForSling creates or reuses a polecat and optionally starts its session.
 // This is used by gt sling when the target is a rig name.
+// Unless --fresh is specified, it will first check for idle polecats to reuse.
 // The caller (sling) handles hook attachment and nudging.
 func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolecatInfo, error) {
 	// Find workspace
@@ -69,45 +71,78 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	polecatGit := git.NewGit(r.Path)
 	polecatMgr := polecat.NewManager(r, polecatGit)
 
-	// Allocate a new polecat name
-	polecatName, err := polecatMgr.AllocateName()
-	if err != nil {
-		return nil, fmt.Errorf("allocating polecat name: %w", err)
-	}
-	fmt.Printf("Allocated polecat: %s\n", polecatName)
-
-	// Check if polecat already exists (shouldn't happen - indicates stale state needing repair)
-	existingPolecat, err := polecatMgr.Get(polecatName)
-
 	// Build add options with hook_bead set atomically at spawn time
 	addOpts := polecat.AddOptions{
 		HookBead: opts.HookBead,
 	}
 
-	if err == nil {
-		// Stale state: polecat exists despite fresh name allocation - repair it
-		// Check for uncommitted work first
-		if !opts.Force {
-			pGit := git.NewGit(existingPolecat.ClonePath)
-			workStatus, checkErr := pGit.CheckUncommittedWork()
-			if checkErr == nil && !workStatus.Clean() {
-				return nil, fmt.Errorf("polecat '%s' has uncommitted work: %s\nUse --force to proceed anyway",
-					polecatName, workStatus.String())
+	var polecatName string
+	var reusedIdle bool
+
+	// Check for idle polecats to reuse (unless --fresh is specified)
+	if !opts.Fresh {
+		idlePolecat, idleInfo, err := polecatMgr.FindIdlePolecat()
+		if err != nil {
+			// Non-fatal: log warning and fall back to spawning new
+			fmt.Printf("%s Could not check for idle polecats: %v\n", style.Dim.Render("Warning:"), err)
+		} else if idlePolecat != nil {
+			// Found an idle polecat - reuse it!
+			polecatName = idlePolecat.Name
+			reusedIdle = true
+			fmt.Printf("♻️  Reusing idle polecat: %s (%s)\n", polecatName, idleInfo.Reason)
+
+			// Refresh the polecat for reuse (reset worktree, create fresh branch)
+			_, err = polecatMgr.RefreshForReuse(polecatName, addOpts)
+			if err != nil {
+				// Refresh failed - fall back to spawning new
+				fmt.Printf("%s Could not refresh idle polecat %s: %v\n", style.Dim.Render("Warning:"), polecatName, err)
+				fmt.Printf("  Falling back to spawning new polecat...\n")
+				polecatName = ""
+				reusedIdle = false
 			}
 		}
-		fmt.Printf("Repairing stale polecat %s with fresh worktree...\n", polecatName)
-		if _, err = polecatMgr.RepairWorktreeWithOptions(polecatName, opts.Force, addOpts); err != nil {
-			return nil, fmt.Errorf("repairing stale polecat: %w", err)
-		}
-	} else if err == polecat.ErrPolecatNotFound {
-		// Create new polecat
-		fmt.Printf("Creating polecat %s...\n", polecatName)
-		if _, err = polecatMgr.AddWithOptions(polecatName, addOpts); err != nil {
-			return nil, fmt.Errorf("creating polecat: %w", err)
-		}
-	} else {
-		return nil, fmt.Errorf("getting polecat: %w", err)
 	}
+
+	// If no idle polecat was reused, spawn a new one
+	if polecatName == "" {
+		// Allocate a new polecat name
+		polecatName, err = polecatMgr.AllocateName()
+		if err != nil {
+			return nil, fmt.Errorf("allocating polecat name: %w", err)
+		}
+		fmt.Printf("Allocated polecat: %s\n", polecatName)
+
+		// Check if polecat already exists (shouldn't happen - indicates stale state needing repair)
+		existingPolecat, err := polecatMgr.Get(polecatName)
+
+		if err == nil {
+			// Stale state: polecat exists despite fresh name allocation - repair it
+			// Check for uncommitted work first
+			if !opts.Force {
+				pGit := git.NewGit(existingPolecat.ClonePath)
+				workStatus, checkErr := pGit.CheckUncommittedWork()
+				if checkErr == nil && !workStatus.Clean() {
+					return nil, fmt.Errorf("polecat '%s' has uncommitted work: %s\nUse --force to proceed anyway",
+						polecatName, workStatus.String())
+				}
+			}
+			fmt.Printf("Repairing stale polecat %s with fresh worktree...\n", polecatName)
+			if _, err = polecatMgr.RepairWorktreeWithOptions(polecatName, opts.Force, addOpts); err != nil {
+				return nil, fmt.Errorf("repairing stale polecat: %w", err)
+			}
+		} else if err == polecat.ErrPolecatNotFound {
+			// Create new polecat
+			fmt.Printf("Creating polecat %s...\n", polecatName)
+			if _, err = polecatMgr.AddWithOptions(polecatName, addOpts); err != nil {
+				return nil, fmt.Errorf("creating polecat: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("getting polecat: %w", err)
+		}
+	}
+
+	// Suppress "reused" variable unused warning
+	_ = reusedIdle
 
 	// Get polecat object for path info
 	polecatObj, err := polecatMgr.Get(polecatName)

@@ -988,3 +988,187 @@ func assessStaleness(info *StalenessInfo, threshold int) (bool, string) {
 	// (The session is the source of truth for liveness)
 	return true, "no active session"
 }
+
+// IdlenessInfo contains details about a polecat's idleness for reuse consideration.
+type IdlenessInfo struct {
+	Name           string
+	IsIdle         bool   // True if polecat meets all idle criteria
+	Reason         string // Why it's idle (or not)
+	HasSession     bool   // Whether tmux session is running
+	HasHook        bool   // Whether work is hooked
+	HasMail        bool   // Whether there's unread mail
+	State          State  // Current state (working/done)
+}
+
+// FindIdlePolecat finds an idle polecat that can be reused for new work.
+// A polecat is idle when:
+// - State is 'done' (not working)
+// - Session is not running
+// - Hook is empty (no work attached)
+// - No unread mail
+// Returns nil if no idle polecat is found.
+func (m *Manager) FindIdlePolecat() (*Polecat, *IdlenessInfo, error) {
+	polecats, err := m.List()
+	if err != nil {
+		return nil, nil, fmt.Errorf("listing polecats: %w", err)
+	}
+
+	for _, p := range polecats {
+		info := m.CheckIdleness(p.Name)
+		if info.IsIdle {
+			return p, info, nil
+		}
+	}
+
+	return nil, nil, nil
+}
+
+// CheckIdleness evaluates whether a polecat meets all idle criteria.
+func (m *Manager) CheckIdleness(name string) *IdlenessInfo {
+	info := &IdlenessInfo{
+		Name: name,
+	}
+
+	// Get polecat to check state
+	p, err := m.Get(name)
+	if err != nil {
+		info.Reason = fmt.Sprintf("could not get polecat: %v", err)
+		return info
+	}
+	info.State = p.State
+
+	// Check 1: State must be 'done' (not working)
+	if p.State.IsActive() {
+		info.Reason = "state is active/working"
+		return info
+	}
+
+	// Check 2: Session must not be running
+	sessionName := fmt.Sprintf("gt-%s-%s", m.rig.Name, name)
+	info.HasSession = checkTmuxSession(sessionName)
+	if info.HasSession {
+		info.Reason = "session is running"
+		return info
+	}
+
+	// Check 3: Hook must be empty (no work attached)
+	agentID := m.agentBeadID(name)
+	_, fields, err := m.beads.GetAgentBead(agentID)
+	if err == nil && fields != nil && fields.HookBead != "" {
+		info.HasHook = true
+		info.Reason = fmt.Sprintf("has hooked work: %s", fields.HookBead)
+		return info
+	}
+
+	// Check 4: No unread mail
+	// Create mailbox for this polecat and check for unread messages
+	address := fmt.Sprintf("%s/polecats/%s", m.rig.Name, name)
+	townRoot := filepath.Dir(m.rig.Path)
+	unreadCount := checkUnreadMail(address, townRoot)
+	if unreadCount > 0 {
+		info.HasMail = true
+		info.Reason = fmt.Sprintf("has %d unread mail", unreadCount)
+		return info
+	}
+
+	// All checks passed - polecat is idle
+	info.IsIdle = true
+	info.Reason = "meets all idle criteria"
+	return info
+}
+
+// checkUnreadMail checks if an agent has unread mail.
+// Returns the count of unread messages, or 0 if check fails or no mail.
+func checkUnreadMail(address, townRoot string) int {
+	// Run bd mail inbox command to check for unread messages
+	// Use --count flag if available, otherwise count output lines
+	cmd := exec.Command("bd", "mail", "inbox", "--count")
+	cmd.Dir = townRoot
+	cmd.Env = append(os.Environ(), "BD_IDENTITY="+address)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0 // Assume no mail on error
+	}
+
+	// Parse count from output
+	var count int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &count); err != nil {
+		return 0
+	}
+	return count
+}
+
+// RefreshForReuse prepares an idle polecat for reuse with new work.
+// This:
+// 1. Fetches latest from origin
+// 2. Resets the worktree to origin/main (or configured default branch)
+// 3. Creates a fresh branch for the new work
+// 4. Updates the agent bead with new hook_bead
+// Returns the refreshed polecat ready for work.
+func (m *Manager) RefreshForReuse(name string, opts AddOptions) (*Polecat, error) {
+	if !m.exists(name) {
+		return nil, ErrPolecatNotFound
+	}
+
+	// Get the clone path
+	clonePath := m.clonePath(name)
+	polecatGit := git.NewGit(clonePath)
+
+	// Check for uncommitted work (shouldn't exist for idle polecats, but be safe)
+	status, err := polecatGit.CheckUncommittedWork()
+	if err == nil && !status.Clean() {
+		return nil, &UncommittedWorkError{PolecatName: name, Status: status}
+	}
+
+	// Get the repo base for fetching
+	repoGit, err := m.repoBase()
+	if err != nil {
+		return nil, fmt.Errorf("finding repo base: %w", err)
+	}
+
+	// Fetch latest from origin (non-fatal: may be offline)
+	_ = repoGit.Fetch("origin")
+
+	// Determine the default branch
+	defaultBranch := "main"
+	if rigCfg, err := rig.LoadRigConfig(m.rig.Path); err == nil && rigCfg.DefaultBranch != "" {
+		defaultBranch = rigCfg.DefaultBranch
+	}
+
+	// Reset worktree to origin/main
+	if err := polecatGit.ResetHard(fmt.Sprintf("origin/%s", defaultBranch)); err != nil {
+		return nil, fmt.Errorf("resetting worktree: %w", err)
+	}
+
+	// Create a fresh branch for this work session
+	branchName := fmt.Sprintf("polecat/%s-%s", name, strconv.FormatInt(time.Now().UnixMilli(), 36))
+	if err := polecatGit.CheckoutNewBranch(branchName); err != nil {
+		return nil, fmt.Errorf("creating new branch: %w", err)
+	}
+
+	// Update agent bead with new hook_bead
+	agentID := m.agentBeadID(name)
+	if opts.HookBead != "" {
+		if err := m.beads.SetHookBead(agentID, opts.HookBead); err != nil {
+			// Non-fatal: warn but continue
+			fmt.Printf("Warning: could not set hook bead: %v\n", err)
+		}
+	}
+
+	// Copy overlay files (in case they've been updated)
+	if err := rig.CopyOverlay(m.rig.Path, clonePath); err != nil {
+		fmt.Printf("Warning: could not copy overlay files: %v\n", err)
+	}
+
+	// Return refreshed polecat in working state
+	now := time.Now()
+	return &Polecat{
+		Name:      name,
+		Rig:       m.rig.Name,
+		State:     StateWorking,
+		ClonePath: clonePath,
+		Branch:    branchName,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
+}

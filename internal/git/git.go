@@ -1099,3 +1099,17 @@ func (g *Git) BranchPushedToRemote(localBranch, remote string) (bool, int, error
 
 	return n == 0, n, nil
 }
+
+// ResetHard resets the working tree to the given ref, discarding all local changes.
+// This is equivalent to `git reset --hard <ref>`.
+func (g *Git) ResetHard(ref string) error {
+	_, err := g.run("reset", "--hard", ref)
+	return err
+}
+
+// CheckoutNewBranch creates a new branch and checks it out.
+// This is equivalent to `git checkout -b <name>`.
+func (g *Git) CheckoutNewBranch(name string) error {
+	_, err := g.run("checkout", "-b", name)
+	return err
+}
