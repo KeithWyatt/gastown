@@ -300,8 +300,9 @@ func (m *Manager) Stop() error {
 	}
 
 	// Kill tmux session if it exists (best-effort: may already be dead)
+	// Use KillSessionWithProcesses to prevent orphan Claude processes.
 	if sessionRunning {
-		_ = t.KillSession(sessionID)
+		_ = t.KillSessionWithProcesses(sessionID)
 	}
 
 	// Note: No PID-based stop per ZFC - tmux session kill is sufficient

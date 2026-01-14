@@ -568,8 +568,10 @@ func (m *Manager) Stop(name string) error {
 		return ErrSessionNotFound
 	}
 
-	// Kill the session
-	if err := t.KillSession(sessionID); err != nil {
+	// Kill the session with explicit process cleanup.
+	// Claude processes can ignore SIGHUP, so we need to explicitly SIGTERM/SIGKILL
+	// all descendants before killing the tmux session to prevent orphans.
+	if err := t.KillSessionWithProcesses(sessionID); err != nil {
 		return fmt.Errorf("killing session: %w", err)
 	}
 
