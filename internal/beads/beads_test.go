@@ -2060,8 +2060,8 @@ func TestCloseAndClearAgentBead_FieldClearing(t *testing.T) {
 		t.Fatalf("bd init: %v\n%s", err, output)
 	}
 
-	beadsDir := filepath.Join(tmpDir, ".beads")
-	bd := New(beadsDir)
+	// Create beads wrapper with tmpDir (not beadsDir) to ensure correct path resolution
+	bd := New(tmpDir)
 
 	// Test cases for field clearing permutations
 	tests := []struct {
@@ -2140,7 +2140,8 @@ func TestCloseAndClearAgentBead_FieldClearing(t *testing.T) {
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create unique agent ID for each test case
-			agentID := fmt.Sprintf("test-testrig-%s-%d", tc.fields.RoleType, i)
+			// Use letter prefix before number to avoid bd's numeric suffix parsing
+			agentID := fmt.Sprintf("test-testrig-polecat-f%d", i)
 
 			// Step 1: Create agent bead with specified fields
 			_, err := bd.CreateAgentBead(agentID, "Test agent", tc.fields)
@@ -2365,8 +2366,8 @@ func TestCloseAndClearAgentBead_ReasonVariations(t *testing.T) {
 		t.Fatalf("bd init: %v\n%s", err, output)
 	}
 
-	beadsDir := filepath.Join(tmpDir, ".beads")
-	bd := New(beadsDir)
+	// Create beads wrapper with tmpDir (not beadsDir) to ensure correct path resolution
+	bd := New(tmpDir)
 
 	tests := []struct {
 		name   string
@@ -2381,7 +2382,8 @@ func TestCloseAndClearAgentBead_ReasonVariations(t *testing.T) {
 
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			agentID := fmt.Sprintf("test-testrig-polecat-reason%d", i)
+			// Use letter prefix before number to avoid bd's numeric suffix parsing
+			agentID := fmt.Sprintf("test-testrig-polecat-r%d", i)
 
 			// Create agent bead
 			_, err := bd.CreateAgentBead(agentID, "Test agent", &AgentFields{
