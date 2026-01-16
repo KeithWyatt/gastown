@@ -182,6 +182,11 @@ func (t *Tmux) KillSessionWithProcesses(name string) error {
 		for _, dpid := range descendants {
 			_ = exec.Command("kill", "-KILL", dpid).Run()
 		}
+
+		// Kill the pane process itself (may have called setsid() and detached)
+		_ = exec.Command("kill", "-TERM", pid).Run()
+		time.Sleep(100 * time.Millisecond)
+		_ = exec.Command("kill", "-KILL", pid).Run()
 	}
 
 	// Kill the tmux session
