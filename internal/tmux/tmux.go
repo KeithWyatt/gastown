@@ -1001,7 +1001,8 @@ func (t *Tmux) WaitForRuntimeReady(session string, rc *config.RuntimeConfig, tim
 // GetSessionInfo returns detailed information about a session.
 func (t *Tmux) GetSessionInfo(name string) (*SessionInfo, error) {
 	format := "#{session_name}|#{session_windows}|#{session_created_string}|#{session_attached}|#{session_activity}|#{session_last_attached}"
-	out, err := t.run("list-sessions", "-F", format, "-f", fmt.Sprintf("#{==:#{session_name},%s}", name))
+	// Note: We avoid -f flag as it requires tmux 3.2+. Filter in Go instead.
+	out, err := t.run("list-sessions", "-F", format)
 	if err != nil {
 		return nil, err
 	}
@@ -1009,9 +1010,29 @@ func (t *Tmux) GetSessionInfo(name string) (*SessionInfo, error) {
 		return nil, ErrSessionNotFound
 	}
 
-	parts := strings.Split(out, "|")
+	// Find the line matching the requested session name
+	lines := strings.Split(out, "\n")
+	var matchingLine string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Session name is the first field before |
+		if idx := strings.Index(line, "|"); idx > 0 {
+			if line[:idx] == name {
+				matchingLine = line
+				break
+			}
+		}
+	}
+	if matchingLine == "" {
+		return nil, ErrSessionNotFound
+	}
+
+	parts := strings.Split(matchingLine, "|")
 	if len(parts) < 4 {
-		return nil, fmt.Errorf("unexpected session info format: %s", out)
+		return nil, fmt.Errorf("unexpected session info format: %s", matchingLine)
 	}
 
 	windows := 0
